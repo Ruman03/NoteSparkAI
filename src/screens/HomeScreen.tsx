@@ -9,7 +9,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
-import { getAuth } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -120,7 +120,7 @@ export default function HomeScreen() {
     try {
       setIsLoading(true);
       
-      const user = getAuth().currentUser;
+      const user = auth().currentUser;
       if (!user) {
         console.error('HomeScreen: No authenticated user found');
         return;

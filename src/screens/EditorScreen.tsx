@@ -23,7 +23,7 @@ import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
-import { getAuth } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'Editor'>;
 
@@ -95,7 +95,7 @@ export default function EditorScreen() {
         
         // Save to database - update existing note if we have an ID, create new one if not
         const notesService = NotesService.getInstance();
-        const user = getAuth().currentUser;
+        const user = auth().currentUser;
         if (!user) {
           console.error('EditorScreen: No authenticated user found');
           return;
@@ -223,7 +223,7 @@ export default function EditorScreen() {
       
       // Save note
       const notesService = NotesService.getInstance();
-      const user = getAuth().currentUser;
+      const user = auth().currentUser;
       if (!user) {
         console.error('EditorScreen: No authenticated user found');
         return;
@@ -262,6 +262,7 @@ export default function EditorScreen() {
       navigation.navigate('MainTabs', { screen: 'Library' });
     } catch (error) {
       console.error("Failed to save note:", error);
+      hapticService.error();
       Alert.alert('Error', 'Failed to save note. Please try again.');
     } finally {
       setIsSaving(false);
@@ -295,6 +296,7 @@ export default function EditorScreen() {
       }
     } catch (error) {
       console.error("Failed to regenerate content:", error);
+      hapticService.error();
       Alert.alert('Error', 'Failed to regenerate content. Please try again.');
     } finally {
       setIsLoading(false);

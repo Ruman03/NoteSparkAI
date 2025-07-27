@@ -87,7 +87,7 @@ export const DatabaseService = {
   // Get a single note
   getNote: async (noteId: string) => {
     const doc = await firestore().collection('notes').doc(noteId).get();
-    if (doc.exists()) {
+    if (doc.exists) {
       return { id: doc.id, ...doc.data() };
     }
     return null;

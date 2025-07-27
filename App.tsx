@@ -1,4 +1,6 @@
-import React from 'react';
+import { hapticService } from './src/services/HapticService';
+import RNBootSplash from "react-native-bootsplash";
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -143,6 +145,11 @@ function MainTabs() {
         },
         headerShown: false,
       })}
+      screenListeners={{
+        tabPress: (e) => {
+          hapticService.tabPress();
+        },
+      }}
     >
       <Tab.Screen 
         name="Home" 
@@ -245,6 +252,10 @@ const AppContent: React.FC = () => {
 export default function App() {
   const colorScheme = useColorScheme();
   const paperTheme = colorScheme === 'dark' ? noteSparkDarkTheme : noteSparkLightTheme;
+
+  useEffect(() => {
+    RNBootSplash.hide({ fade: true });
+  }, []);
 
   return (
     <PaperProvider theme={paperTheme}>

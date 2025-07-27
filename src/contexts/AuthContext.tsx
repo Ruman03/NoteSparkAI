@@ -80,7 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const updateEmail = async (newEmail: string) => {
     try {
-      await authService.updateUserEmail(newEmail);
+      await authService.updateEmail(newEmail);
     } catch (error) {
       throw error;
     }
@@ -96,7 +96,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const deleteAccount = async () => {
     try {
-      await authService.deleteUser();
+      await authService.deleteAccount();
     } catch (error) {
       throw error;
     }

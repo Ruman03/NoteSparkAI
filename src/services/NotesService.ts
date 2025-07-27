@@ -157,7 +157,7 @@ export class NotesService {
         return await getDoc(noteRef);
       }, 'getDoc for ownership check');
       
-      if (!noteDoc.exists() || noteDoc.data()?.userId !== userId) {
+      if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
         throw new Error('Note not found or access denied');
       }
 
@@ -183,7 +183,7 @@ export class NotesService {
       
       // Verify ownership
       const noteDoc = await getDoc(noteRef);
-      if (!noteDoc.exists() || noteDoc.data()?.userId !== userId) {
+      if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
         throw new Error('Note not found or access denied');
       }
 
@@ -199,19 +199,22 @@ export class NotesService {
       const db = getFirestore();
       const noteDoc = await getDoc(doc(db, this.collection, noteId));
       
-      if (!noteDoc.exists() || noteDoc.data()?.userId !== userId) {
+      if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
         return null;
       }
 
+      const data = noteDoc.data();
+      if (!data) return null;
+
       return {
         id: noteDoc.id,
-        ...noteDoc.data(),
-        createdAt: noteDoc.data()?.createdAt.toDate(),
-        updatedAt: noteDoc.data()?.updatedAt.toDate(),
+        ...data,
+        createdAt: data.createdAt.toDate(),
+        updatedAt: data.updatedAt.toDate(),
       } as Note;
     } catch (error) {
-      console.error('Error fetching note:', error);
-      return null;
+      console.error('Error fetching note by ID:', error);
+      throw error;
     }
   }
 

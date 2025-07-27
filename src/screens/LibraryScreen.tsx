@@ -18,8 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { LibraryScreenNavigationProp } from '../types/navigation';
 import { NotesService } from '../services/NotesService';
 import type { Note } from '../types';
-import { getAuth } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 
+import { hapticService } from '../services/HapticService';
 import LibraryHeader from '../components/library/LibraryHeader';
 import NoteCard from '../components/library/NoteCard';
 import LibraryEmptyState from '../components/library/LibraryEmptyState';
@@ -40,7 +41,7 @@ export default function LibraryScreen() {
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'tone'>('date');
 
   const loadNotes = useCallback(async () => {
-    const user = getAuth().currentUser;
+    const user = auth().currentUser;
     if (!user) {
       console.error('LibraryScreen: No authenticated user found');
       setIsLoading(false);
@@ -108,6 +109,7 @@ export default function LibraryScreen() {
   }, [loadNotes]);
 
   const handleNotePress = useCallback((note: Note) => {
+    hapticService.light();
     navigation.navigate('Editor', {
       noteId: note.id,
       noteText: note.content,
@@ -117,6 +119,7 @@ export default function LibraryScreen() {
   }, [navigation]);
 
   const handleScanNew = useCallback(() => {
+    hapticService.medium();
     navigation.navigate('Scanner');
   }, [navigation]);
 

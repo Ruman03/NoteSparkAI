@@ -83,6 +83,7 @@ export default function ToneSelectionScreen() {
       });
     } catch (error) {
       console.error('Failed to transform text:', error);
+      hapticService.error();
       // For now, continue with original text if AI fails
       navigation.navigate('Editor', {
         noteText: extractedText,

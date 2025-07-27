@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
 import { Card, Text, Avatar, Chip, IconButton, useTheme } from 'react-native-paper';
 import type { Note } from '../../types';
-import { formatDate, getToneColor, getToneIcon } from '@/utils/ui';
+import { formatDate, getToneColor, getToneIcon } from '../../utils/ui';
 
 const { width } = Dimensions.get('window');
 

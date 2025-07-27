@@ -56,6 +56,7 @@ describe('NotesService', () => {
   let mockFirestore: any;
   let mockCollection: any;
   let mockDoc: any;
+  const mockUserId = 'test-user-id';
 
   beforeEach(() => {
     notesService = NotesService.getInstance();
@@ -93,7 +94,7 @@ describe('NotesService', () => {
       const mockNoteId = 'test-note-id';
       mockCollection.add.mockResolvedValueOnce({ id: mockNoteId });
 
-      const result = await notesService.saveNote(mockNote);
+      const result = await notesService.saveNote(mockUserId, mockNote);
 
       expect(result).toBe(mockNoteId);
       expect(mockFirestore.collection).toHaveBeenCalledWith('notes');
@@ -108,7 +109,7 @@ describe('NotesService', () => {
     it('should handle save errors gracefully', async () => {
       mockCollection.add.mockRejectedValueOnce(new Error('Firestore error'));
 
-      await expect(notesService.saveNote(mockNote)).rejects.toThrow('Firestore error');
+      await expect(notesService.saveNote(mockUserId, mockNote)).rejects.toThrow('Firestore error');
     });
 
     it('should require user authentication', async () => {
@@ -117,7 +118,7 @@ describe('NotesService', () => {
         currentUser: null,
       });
 
-      await expect(notesService.saveNote(mockNote)).rejects.toThrow('User not authenticated');
+      await expect(notesService.saveNote(mockUserId, mockNote)).rejects.toThrow('User not authenticated');
     });
   });
 
@@ -132,7 +133,7 @@ describe('NotesService', () => {
     it('should update a note successfully', async () => {
       mockDoc.update.mockResolvedValueOnce(undefined);
 
-      await notesService.updateNote(mockNoteId, mockUpdates);
+      await notesService.updateNote(mockUserId, mockNoteId, mockUpdates);
 
       expect(mockFirestore.collection).toHaveBeenCalledWith('notes');
       expect(mockCollection.doc).toHaveBeenCalledWith(mockNoteId);
@@ -145,7 +146,7 @@ describe('NotesService', () => {
     it('should handle update errors gracefully', async () => {
       mockDoc.update.mockRejectedValueOnce(new Error('Update failed'));
 
-      await expect(notesService.updateNote(mockNoteId, mockUpdates)).rejects.toThrow('Update failed');
+      await expect(notesService.updateNote(mockUserId, mockNoteId, mockUpdates)).rejects.toThrow('Update failed');
     });
   });
 
@@ -155,7 +156,7 @@ describe('NotesService', () => {
     it('should delete a note successfully', async () => {
       mockDoc.delete.mockResolvedValueOnce(undefined);
 
-      await notesService.deleteNote(mockNoteId);
+      await notesService.deleteNote(mockUserId, mockNoteId);
 
       expect(mockFirestore.collection).toHaveBeenCalledWith('notes');
       expect(mockCollection.doc).toHaveBeenCalledWith(mockNoteId);
@@ -165,7 +166,7 @@ describe('NotesService', () => {
     it('should handle delete errors gracefully', async () => {
       mockDoc.delete.mockRejectedValueOnce(new Error('Delete failed'));
 
-      await expect(notesService.deleteNote(mockNoteId)).rejects.toThrow('Delete failed');
+      await expect(notesService.deleteNote(mockUserId, mockNoteId)).rejects.toThrow('Delete failed');
     });
   });
 
@@ -187,7 +188,7 @@ describe('NotesService', () => {
         data: () => mockNoteData,
       });
 
-      const result = await notesService.getNoteById(mockNoteId);
+      const result = await notesService.getNoteById(mockUserId, mockNoteId);
 
       expect(result).toEqual({
         id: mockNoteId,
@@ -205,7 +206,7 @@ describe('NotesService', () => {
         exists: false,
       });
 
-      const result = await notesService.getNoteById(mockNoteId);
+      const result = await notesService.getNoteById(mockUserId, mockNoteId);
 
       expect(result).toBeNull();
     });
@@ -213,7 +214,7 @@ describe('NotesService', () => {
     it('should handle retrieval errors gracefully', async () => {
       mockDoc.get.mockRejectedValueOnce(new Error('Retrieval failed'));
 
-      await expect(notesService.getNoteById(mockNoteId)).rejects.toThrow('Retrieval failed');
+      await expect(notesService.getNoteById(mockUserId, mockNoteId)).rejects.toThrow('Retrieval failed');
     });
   });
 
@@ -249,7 +250,7 @@ describe('NotesService', () => {
         docs: mockNotesData,
       });
 
-      const result = await notesService.getUserNotes();
+      const result = await notesService.getUserNotes(mockUserId);
 
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('note1');
@@ -269,7 +270,7 @@ describe('NotesService', () => {
         docs: [],
       });
 
-      const result = await notesService.getUserNotes();
+      const result = await notesService.getUserNotes(mockUserId);
 
       expect(result).toEqual([]);
     });
@@ -280,7 +281,7 @@ describe('NotesService', () => {
       mockCollection.where.mockReturnValueOnce(mockWhere);
       mockOrderBy.get.mockRejectedValueOnce(new Error('Query failed'));
 
-      await expect(notesService.getUserNotes()).rejects.toThrow('Query failed');
+      await expect(notesService.getUserNotes(mockUserId)).rejects.toThrow('Query failed');
     });
   });
 
@@ -307,7 +308,7 @@ describe('NotesService', () => {
         docs: mockSearchResults,
       });
 
-      const result = await notesService.searchNotes('meeting');
+      const result = await notesService.searchNotes(mockUserId, 'meeting');
 
       expect(result).toHaveLength(1);
       expect(result[0].title).toBe('Meeting Notes');
@@ -315,7 +316,7 @@ describe('NotesService', () => {
     });
 
     it('should handle empty search query', async () => {
-      const result = await notesService.searchNotes('');
+      const result = await notesService.searchNotes(mockUserId, '');
       expect(result).toEqual([]);
     });
 
@@ -325,7 +326,7 @@ describe('NotesService', () => {
       mockCollection.where.mockReturnValueOnce(mockWhere);
       mockOrderBy.get.mockRejectedValueOnce(new Error('Search failed'));
 
-      await expect(notesService.searchNotes('test')).rejects.toThrow('Search failed');
+      await expect(notesService.searchNotes(mockUserId, 'test')).rejects.toThrow('Search failed');
     });
   });
 

@@ -19,6 +19,7 @@ import {
 } from 'react-native-paper';
 import EmojiIcon from '../components/EmojiIcon';
 import { useAuth } from '../contexts/AuthContext';
+import { hapticService } from '../services/HapticService';
 
 const AuthScreen: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -32,6 +33,7 @@ const AuthScreen: React.FC = () => {
   const { signIn, signUp } = useAuth();
 
   const handleAuth = async () => {
+    hapticService.buttonPress();
     if (!email || !password) return;
     
     if (!isLogin && password !== confirmPassword) {
@@ -46,7 +48,9 @@ const AuthScreen: React.FC = () => {
       } else {
         await signUp(email, password);
       }
+      hapticService.success();
     } catch (error: any) {
+      hapticService.error();
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
@@ -72,7 +76,10 @@ const AuthScreen: React.FC = () => {
     return (
       <Button
         mode="outlined"
-        onPress={onPress}
+        onPress={() => {
+          hapticService.buttonPress();
+          onPress();
+        }}
         style={[styles.socialButton, { borderColor: theme.colors.outline }]}
         contentStyle={styles.socialButtonContent}
         labelStyle={[styles.socialButtonText, { color: theme.colors.onSurface }]}
@@ -209,7 +216,10 @@ const AuthScreen: React.FC = () => {
                 </Text>
                 <Button
                   mode="text"
-                  onPress={() => setIsLogin(!isLogin)}
+                  onPress={() => {
+                    hapticService.light();
+                    setIsLogin(!isLogin);
+                  }}
                   labelStyle={[styles.switchButtonText, { color: theme.colors.primary }]}
                   compact
                 >
