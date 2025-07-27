@@ -129,6 +129,10 @@ export default function LibraryScreen() {
   };
 
   const formatDate = (date: Date) => {
+    if (!date || isNaN(date.getTime())) {
+      return 'Unknown date';
+    }
+    
     const now = new Date();
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
 
@@ -240,14 +244,14 @@ export default function LibraryScreen() {
                       style={[styles.noteTitle, { color: theme.colors.onSurface }]} 
                       numberOfLines={isGridView ? 3 : 2}
                     >
-                      {note.title}
+                      {note.title || 'Untitled Note'}
                     </Text>
                     {!isGridView && (
                       <Text 
                         variant="bodySmall" 
                         style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
                       >
-                        {formatDate(new Date(note.updatedAt))} • {note.plainText.split(' ').length} words
+                        {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'} • {(note.plainText || '').split(' ').filter(word => word.length > 0).length} words
                       </Text>
                     )}
                   </View>
@@ -268,7 +272,7 @@ export default function LibraryScreen() {
                 style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}
                 numberOfLines={isGridView ? 2 : 3}
               >
-                {note.plainText}
+                {note.plainText || 'No content available'}
               </Text>
 
               <View style={[
@@ -281,7 +285,7 @@ export default function LibraryScreen() {
                   textStyle={{ color: getToneColor(note.tone), fontSize: isGridView ? 10 : 12, fontWeight: '600' }}
                   compact
                 >
-                  {note.tone}
+                  {note.tone || 'unknown'}
                 </Chip>
                 
                 {isGridView && (
@@ -289,7 +293,7 @@ export default function LibraryScreen() {
                     variant="labelSmall" 
                     style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
                   >
-                    {formatDate(new Date(note.updatedAt))}
+                    {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
                   </Text>
                 )}
                 
