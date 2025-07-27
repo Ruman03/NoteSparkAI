@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Notes collection security rules
+    match /notes/{noteId} {
+      // Users can only read, write, update, and delete their own notes
+      allow read, write, update, delete: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      
+      // Allow create if user is authenticated and sets correct userId
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.userId
+        && validateNoteData(request.resource.data);
+    }
+    
+    // User profiles collection (if we add it later)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Analytics collection (read-only for users, write for system)
+    match /analytics/{document} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only system/admin can write analytics
+    }
+  }
+}
+
+// Validation function for note data
+function validateNoteData(data) {
+  return data.keys().hasAll(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt', 'userId', 'tags', 'isStarred'])
+    && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+    && data.content is string && data.content.size() <= 50000
+    && data.plainText is string && data.plainText.size() <= 50000
+    && data.tone in ['professional', 'casual', 'simplified']
+    && data.wordCount is number && data.wordCount >= 0
+    && data.createdAt is timestamp
+    && data.updatedAt is timestamp
+    && data.userId is string
+    && data.tags is list && data.tags.size() <= 20
+    && data.isStarred is bool;
+}
