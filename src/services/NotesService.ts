@@ -1,8 +1,19 @@
 // NoteSpark AI - Notes Management Service
 // Firebase Firestore integration for note CRUD operations
 
-import firestore, { collection, doc, setDoc, getDocs, query, where, orderBy, updateDoc, getDoc, deleteDoc } from '@react-native-firebase/firestore';
-import auth, { getAuth } from '@react-native-firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  updateDoc, 
+  getDoc, 
+  deleteDoc 
+} from '@react-native-firebase/firestore';
 import type { Note } from '../types';
 
 interface CreateNoteRequest {
@@ -30,25 +41,11 @@ export class NotesService {
     return NotesService.instance;
   }
 
-  private getCurrentUserId(): string {
-    const currentUser = getAuth().currentUser;
-    console.log('NotesService: Getting current user ID:', currentUser ? 'User authenticated' : 'No user authenticated');
-    console.log('NotesService: Current user details:', currentUser ? { uid: currentUser.uid, email: currentUser.email } : 'null');
-    
-    if (!currentUser) {
-      console.error('NotesService: User not authenticated - cannot save/fetch notes');
-      throw new Error('User not authenticated');
-    }
-    return currentUser.uid;
-  }
-
-  async saveNote(noteData: CreateNoteRequest): Promise<string> {
+  async saveNote(userId: string, noteData: CreateNoteRequest): Promise<string> {
     try {
-      console.log('NotesService: Starting saveNote operation');
-      const userId = this.getCurrentUserId();
-      console.log('NotesService: User ID obtained:', userId);
+      console.log('NotesService: Starting saveNote operation for user:', userId);
       
-      const db = firestore();
+      const db = getFirestore();
       const noteRef = doc(collection(db, this.collection));
       console.log('NotesService: Note reference created with ID:', noteRef.id);
       
@@ -76,7 +73,7 @@ export class NotesService {
     } catch (error) {
       console.error('NotesService: Error saving note:', error);
       console.error('NotesService: Error details:', JSON.stringify(error, null, 2));
-      throw new Error('Failed to save note');
+      throw error;
     }
   }
 
@@ -114,13 +111,11 @@ export class NotesService {
     throw new Error(`All ${maxRetries} attempts failed for ${operationName}`);
   }
 
-  async getUserNotes(): Promise<Note[]> {
+  async getUserNotes(userId: string): Promise<Note[]> {
     try {
-      console.log('NotesService: Starting getUserNotes operation');
-      const userId = this.getCurrentUserId();
-      console.log('NotesService: User ID for fetching notes:', userId);
+      console.log('NotesService: Starting getUserNotes operation for user:', userId);
       
-      const db = firestore();
+      const db = getFirestore();
       const q = query(
         collection(db, this.collection),
         where('userId', '==', userId),
@@ -147,16 +142,14 @@ export class NotesService {
     } catch (error) {
       console.error('NotesService: Error fetching notes:', error);
       console.error('NotesService: Error details:', JSON.stringify(error, null, 2));
-      // Return empty array for now - will be replaced with local storage fallback
-      return [];
+      throw error;
     }
   }
 
-  async updateNote(noteId: string, updates: Partial<Note>): Promise<void> {
+  async updateNote(userId: string, noteId: string, updates: Partial<Note>): Promise<void> {
     try {
       console.log('NotesService: Starting updateNote operation for ID:', noteId);
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const noteRef = doc(db, this.collection, noteId);
       
       // Verify ownership with retry
@@ -179,14 +172,13 @@ export class NotesService {
       console.log('NotesService: Note updated successfully:', noteId);
     } catch (error) {
       console.error('NotesService: Error updating note:', error);
-      throw new Error('Failed to update note');
+      throw error;
     }
   }
 
-  async deleteNote(noteId: string): Promise<void> {
+  async deleteNote(userId: string, noteId: string): Promise<void> {
     try {
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const noteRef = doc(db, this.collection, noteId);
       
       // Verify ownership
@@ -198,14 +190,13 @@ export class NotesService {
       await deleteDoc(noteRef);
     } catch (error) {
       console.error('Error deleting note:', error);
-      throw new Error('Failed to delete note');
+      throw error;
     }
   }
 
-  async getNoteById(noteId: string): Promise<Note | null> {
+  async getNoteById(userId: string, noteId: string): Promise<Note | null> {
     try {
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const noteDoc = await getDoc(doc(db, this.collection, noteId));
       
       if (!noteDoc.exists() || noteDoc.data()?.userId !== userId) {
@@ -224,10 +215,9 @@ export class NotesService {
     }
   }
 
-  async searchNotes(searchQuery: string): Promise<Note[]> {
+  async searchNotes(userId: string, searchQuery: string): Promise<Note[]> {
     try {
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const q = query(
         collection(db, this.collection),
         where('userId', '==', userId),
@@ -255,10 +245,9 @@ export class NotesService {
     }
   }
 
-  async getNotesByTone(tone: 'professional' | 'casual' | 'simplified'): Promise<Note[]> {
+  async getNotesByTone(userId: string, tone: 'professional' | 'casual' | 'simplified'): Promise<Note[]> {
     try {
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const q = query(
         collection(db, this.collection),
         where('userId', '==', userId),
@@ -279,10 +268,9 @@ export class NotesService {
     }
   }
 
-  async getStarredNotes(): Promise<Note[]> {
+  async getStarredNotes(userId: string): Promise<Note[]> {
     try {
-      const userId = this.getCurrentUserId();
-      const db = firestore();
+      const db = getFirestore();
       const q = query(
         collection(db, this.collection),
         where('userId', '==', userId),
@@ -303,14 +291,14 @@ export class NotesService {
     }
   }
 
-  async toggleNoteStar(noteId: string): Promise<void> {
+  async toggleNoteStar(userId: string, noteId: string): Promise<void> {
     try {
-      const note = await this.getNoteById(noteId);
+      const note = await this.getNoteById(userId, noteId);
       if (!note) {
         throw new Error('Note not found');
       }
 
-      await this.updateNote(noteId, { isStarred: !note.isStarred });
+      await this.updateNote(userId, noteId, { isStarred: !note.isStarred });
     } catch (error) {
       console.error('Error toggling note star:', error);
       throw new Error('Failed to update note');

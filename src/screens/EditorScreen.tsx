@@ -23,6 +23,7 @@ import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
+import { getAuth } from '@react-native-firebase/auth';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'Editor'>;
 
@@ -94,11 +95,16 @@ export default function EditorScreen() {
         
         // Save to database - update existing note if we have an ID, create new one if not
         const notesService = NotesService.getInstance();
+        const user = getAuth().currentUser;
+        if (!user) {
+          console.error('EditorScreen: No authenticated user found');
+          return;
+        }
         
         if (noteIdRef.current) {
           // Update existing note
           console.log('EditorScreen: Updating existing note with ID:', noteIdRef.current);
-          await notesService.updateNote(noteIdRef.current, {
+          await notesService.updateNote(user.uid, noteIdRef.current, {
             title: currentTitle,
             content: html,
             plainText: textContent,
@@ -111,7 +117,7 @@ export default function EditorScreen() {
         } else {
           // Create new note and store the ID
           console.log('EditorScreen: Creating new note');
-          const newNoteId = await notesService.saveNote({
+          const newNoteId = await notesService.saveNote(user.uid, {
             title: currentTitle,
             content: html,
             plainText: textContent,
@@ -217,10 +223,15 @@ export default function EditorScreen() {
       
       // Save note
       const notesService = NotesService.getInstance();
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error('EditorScreen: No authenticated user found');
+        return;
+      }
       
       if (noteIdRef.current) {
         // Update existing note
-        await notesService.updateNote(noteIdRef.current, {
+        await notesService.updateNote(user.uid, noteIdRef.current, {
           title: currentTitle,
           content: html,
           plainText: textContent,
@@ -231,7 +242,7 @@ export default function EditorScreen() {
         });
       } else {
         // Create new note and store the ID
-        const newNoteId = await notesService.saveNote({
+        const newNoteId = await notesService.saveNote(user.uid, {
           title: currentTitle,
           content: html,
           plainText: textContent,

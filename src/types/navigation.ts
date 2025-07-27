@@ -7,6 +7,7 @@ export type RootStackParamList = {
   MainTabs: { screen?: keyof MainTabParamList } | undefined;
   ToneSelection: { extractedText: string };
   Editor: { 
+    noteId?: string;
     noteText: string; 
     tone: 'professional' | 'casual' | 'simplified';
     originalText?: string;

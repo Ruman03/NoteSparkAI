@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
+import { getAuth } from '@react-native-firebase/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -119,9 +120,15 @@ export default function HomeScreen() {
     try {
       setIsLoading(true);
       
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error('HomeScreen: No authenticated user found');
+        return;
+      }
+      
       // Use Promise.all to load data concurrently and add a minimum loading time for smooth UX
       const [notes] = await Promise.all([
-        notesService.getUserNotes(),
+        notesService.getUserNotes(user.uid),
         new Promise(resolve => setTimeout(resolve, 800)) // Minimum 800ms for smooth loading experience
       ]);
       

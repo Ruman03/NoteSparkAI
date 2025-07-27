@@ -1,7 +1,16 @@
 // NoteSpark AI - Authentication Service
-// Firebase authentication operations separated from context
+// Firebase authentication operations with modern modular API
 
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { 
+  FirebaseAuthTypes, 
+  onAuthStateChanged, 
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+  EmailAuthProvider
+} from '@react-native-firebase/auth';
 
 interface AuthResult {
   user: FirebaseAuthTypes.User;
@@ -20,51 +29,44 @@ export class AuthService {
   }
 
   /**
-   * Sign in with email and password
+   * Sign in with email and password using modern API
    */
   async signInWithEmailAndPassword(email: string, password: string): Promise<AuthResult> {
     try {
       console.log('AuthService: SignIn attempt for:', email);
-      const userCredential = await auth().signInWithEmailAndPassword(email, password);
+      const userCredential = await signInWithEmailAndPassword(getAuth(), email, password);
       console.log('AuthService: SignIn successful');
       return { user: userCredential.user };
     } catch (error: any) {
       console.error('AuthService: SignIn error:', error);
-      console.error('AuthService: Error code:', error.code);
-      console.error('AuthService: Error message:', error.message);
-      
-      // Transform Firebase errors to user-friendly messages
       const friendlyError = this.transformFirebaseError(error);
       throw new Error(friendlyError);
     }
   }
 
   /**
-   * Create new user account
+   * Create new user account using modern API
    */
   async createUserWithEmailAndPassword(email: string, password: string): Promise<AuthResult> {
     try {
       console.log('AuthService: SignUp attempt for:', email);
-      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      const userCredential = await createUserWithEmailAndPassword(getAuth(), email, password);
       console.log('AuthService: SignUp successful');
       return { user: userCredential.user };
     } catch (error: any) {
       console.error('AuthService: SignUp error:', error);
-      console.error('AuthService: Error code:', error.code);
-      console.error('AuthService: Error message:', error.message);
-      
       const friendlyError = this.transformFirebaseError(error);
       throw new Error(friendlyError);
     }
   }
 
   /**
-   * Sign out current user
+   * Sign out current user using modern API
    */
   async signOut(): Promise<void> {
     try {
       console.log('AuthService: SignOut attempt');
-      await auth().signOut();
+      await signOut(getAuth());
       console.log('AuthService: SignOut successful');
     } catch (error: any) {
       console.error('AuthService: SignOut error:', error);
@@ -74,12 +76,12 @@ export class AuthService {
   }
 
   /**
-   * Send password reset email
+   * Send password reset email using modern API
    */
   async sendPasswordResetEmail(email: string): Promise<void> {
     try {
       console.log('AuthService: Password reset attempt for:', email);
-      await auth().sendPasswordResetEmail(email);
+      await sendPasswordResetEmail(getAuth(), email);
       console.log('AuthService: Password reset email sent');
     } catch (error: any) {
       console.error('AuthService: Password reset error:', error);
@@ -89,19 +91,21 @@ export class AuthService {
   }
 
   /**
-   * Get current user
+   * Get current user using modern API
    */
   getCurrentUser(): FirebaseAuthTypes.User | null {
-    return auth().currentUser;
+    return getAuth().currentUser;
   }
 
   /**
-   * Set up auth state listener
+   * Set up auth state change listener using modern modular API
+   * This is the critical method that was causing the error
    */
   onAuthStateChanged(callback: (user: FirebaseAuthTypes.User | null) => void): () => void {
     try {
-      console.log('AuthService: Setting up auth state listener');
-      return auth().onAuthStateChanged(callback);
+      console.log('AuthService: Setting up modern auth state listener');
+      // Use the modern modular API to avoid deprecation warnings
+      return onAuthStateChanged(getAuth(), callback);
     } catch (error) {
       console.error('AuthService: Failed to set up auth listener:', error);
       return () => {}; // Return empty cleanup function
@@ -128,63 +132,6 @@ export class AuthService {
   }
 
   /**
-   * Update user email
-   */
-  async updateUserEmail(newEmail: string): Promise<void> {
-    try {
-      const user = this.getCurrentUser();
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
-      
-      await user.updateEmail(newEmail);
-      console.log('AuthService: User email updated successfully');
-    } catch (error: any) {
-      console.error('AuthService: Email update error:', error);
-      const friendlyError = this.transformFirebaseError(error);
-      throw new Error(friendlyError);
-    }
-  }
-
-  /**
-   * Update user password
-   */
-  async updateUserPassword(newPassword: string): Promise<void> {
-    try {
-      const user = this.getCurrentUser();
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
-      
-      await user.updatePassword(newPassword);
-      console.log('AuthService: User password updated successfully');
-    } catch (error: any) {
-      console.error('AuthService: Password update error:', error);
-      const friendlyError = this.transformFirebaseError(error);
-      throw new Error(friendlyError);
-    }
-  }
-
-  /**
-   * Delete user account
-   */
-  async deleteUser(): Promise<void> {
-    try {
-      const user = this.getCurrentUser();
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
-      
-      await user.delete();
-      console.log('AuthService: User account deleted successfully');
-    } catch (error: any) {
-      console.error('AuthService: Account deletion error:', error);
-      const friendlyError = this.transformFirebaseError(error);
-      throw new Error(friendlyError);
-    }
-  }
-
-  /**
    * Re-authenticate user (required for sensitive operations)
    */
   async reauthenticateWithEmailAndPassword(email: string, password: string): Promise<void> {
@@ -194,7 +141,7 @@ export class AuthService {
         throw new Error('No authenticated user found');
       }
 
-      const credential = auth.EmailAuthProvider.credential(email, password);
+      const credential = EmailAuthProvider.credential(email, password);
       await user.reauthenticateWithCredential(credential);
       console.log('AuthService: User reauthenticated successfully');
     } catch (error: any) {

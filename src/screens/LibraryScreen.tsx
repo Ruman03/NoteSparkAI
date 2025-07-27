@@ -1,34 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { 
   View, 
   StyleSheet, 
   RefreshControl, 
-  Animated,
-  TouchableOpacity,
-  Dimensions,
   ActivityIndicator,
-  FlatList,
+  Dimensions,
 } from 'react-native';
-// import { FlashList } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { 
-  Surface, 
   Text, 
   useTheme, 
-  Card, 
-  Chip,
   FAB,
-  Searchbar,
-  Button,
-  Avatar,
-  Menu,
-  IconButton,
 } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 import type { LibraryScreenNavigationProp } from '../types/navigation';
 import { NotesService } from '../services/NotesService';
 import type { Note } from '../types';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { getAuth } from '@react-native-firebase/auth';
+
+import LibraryHeader from '../components/library/LibraryHeader';
+import NoteCard from '../components/library/NoteCard';
+import LibraryEmptyState from '../components/library/LibraryEmptyState';
 
 const { width } = Dimensions.get('window');
 
@@ -38,92 +32,59 @@ export default function LibraryScreen() {
   const notesService = NotesService.getInstance();
 
   const [notes, setNotes] = useState<Note[]>([]);
-  const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTone, setSelectedTone] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'tone'>('date');
-  const [menuVisible, setMenuVisible] = useState(false);
 
-  const fadeAnim = new Animated.Value(0);
+  const loadNotes = useCallback(async () => {
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error('LibraryScreen: No authenticated user found');
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
 
-  const loadNotes = async () => {
     try {
-      console.log('LibraryScreen: Starting to load notes');
+      console.log('LibraryScreen: Starting to load notes for user:', user.uid);
       setIsLoading(true);
-      const userNotes = await notesService.getUserNotes();
+      const userNotes = await notesService.getUserNotes(user.uid);
       console.log('LibraryScreen: Loaded notes:', userNotes.length, 'notes found');
-      console.log('LibraryScreen: Sample note data:', userNotes.length > 0 ? {
-        id: userNotes[0].id,
-        title: userNotes[0].title,
-        plainText: userNotes[0].plainText ? userNotes[0].plainText.substring(0, 50) + '...' : 'No content',
-        tone: userNotes[0].tone,
-        hasTitle: !!userNotes[0].title,
-        hasPlainText: !!userNotes[0].plainText,
-        hasTags: !!userNotes[0].tags
-      } : 'No notes found');
       setNotes(userNotes);
-      
-      // Apply current filters to the loaded notes
-      filterNotes(searchQuery, selectedTone, userNotes);
-      
-      // Animate notes appearance
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }).start();
     } catch (error) {
       console.error('LibraryScreen: Failed to load notes:', error);
       setNotes([]);
-      setFilteredNotes([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [notesService]);
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    loadNotes();
-  };
+  useFocusEffect(
+    useCallback(() => {
+      loadNotes();
+    }, [loadNotes])
+  );
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    filterNotes(query, selectedTone);
-  };
+  const filteredNotes = useMemo(() => {
+    let filtered = [...notes];
 
-  const handleToneFilter = (tone: string | null) => {
-    setSelectedTone(tone);
-    filterNotes(searchQuery, tone);
-  };
-
-  const filterNotes = (query: string, toneFilter: string | null, notesToFilter?: Note[]) => {
-    console.log('LibraryScreen: filterNotes called with query:', query, 'toneFilter:', toneFilter);
-    const sourceNotes = notesToFilter || notes;
-    console.log('LibraryScreen: Starting with notes.length:', sourceNotes.length);
-    let filtered = [...sourceNotes]; // Create a copy to avoid mutation
-
-    // Apply search filter only if query is not empty
-    if (query && query.trim().length > 0) {
-      const queryLower = query.toLowerCase().trim();
+    if (searchQuery && searchQuery.trim().length > 0) {
+      const queryLower = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(note => 
         (note.title && note.title.toLowerCase().includes(queryLower)) ||
         (note.plainText && note.plainText.toLowerCase().includes(queryLower)) ||
         (note.tags && note.tags.some(tag => tag.toLowerCase().includes(queryLower)))
       );
-      console.log('LibraryScreen: After query filter, filtered.length:', filtered.length);
     }
 
-    // Apply tone filter only if a tone is selected
-    if (toneFilter) {
-      filtered = filtered.filter(note => note.tone === toneFilter);
-      console.log('LibraryScreen: After tone filter, filtered.length:', filtered.length);
+    if (selectedTone) {
+      filtered = filtered.filter(note => note.tone === selectedTone);
     }
 
-    // Sort notes with null safety
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'title':
@@ -138,416 +99,100 @@ export default function LibraryScreen() {
       }
     });
 
-    console.log('LibraryScreen: Final filtered.length before setFilteredNotes:', filtered.length);
-    setFilteredNotes(filtered);
-  };
+    return filtered;
+  }, [notes, searchQuery, selectedTone, sortBy]);
 
-  const formatDate = (date: Date) => {
-    if (!date || isNaN(date.getTime())) {
-      return 'Unknown date';
-    }
-    
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    loadNotes();
+  }, [loadNotes]);
 
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffInHours < 24 * 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-  };
-
-  const getToneColor = (tone: string) => {
-    const toneColors: { [key: string]: string } = {
-      'professional': theme.colors.primary,
-      'casual': theme.colors.secondary,
-      'academic': theme.colors.tertiary,
-      'creative': '#E91E63', // Pink
-      'technical': '#FF9800', // Orange
-      'simplified': '#9C27B0', // Purple
-    };
-    return toneColors[tone] || theme.colors.onSurfaceVariant;
-  };
-
-  const getToneIcon = (tone: string) => {
-    const toneIcons: { [key: string]: string } = {
-      'professional': 'briefcase',
-      'casual': 'chat',
-      'academic': 'school',
-      'creative': 'palette',
-      'technical': 'code-tags',
-      'simplified': 'lightbulb',
-    };
-    return toneIcons[tone] || 'note-text';
-  };
-
-  const handleNotePress = (note: Note) => {
+  const handleNotePress = useCallback((note: Note) => {
     navigation.navigate('Editor', {
+      noteId: note.id,
       noteText: note.content,
       tone: note.tone,
       originalText: note.originalText || ''
     });
-  };
+  }, [navigation]);
 
-  const handleScanNew = () => {
+  const handleScanNew = useCallback(() => {
     navigation.navigate('Scanner');
-  };
+  }, [navigation]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadNotes();
-    }, [])
-  );
+  const renderNoteCard = useCallback(({ item }: { item: Note }) => (
+    <NoteCard 
+      note={item} 
+      onPress={() => handleNotePress(item)} 
+      viewMode={viewMode}
+    />
+  ), [viewMode, handleNotePress]);
 
-  // Re-filter notes when notes array changes
-  useEffect(() => {
-    if (notes.length > 0) {
-      filterNotes(searchQuery, selectedTone);
-    }
-  }, [notes, searchQuery, selectedTone]);
-
-  const renderNoteCard = ({ item: note, index }: { item: Note, index: number }) => {
-    const isGridView = viewMode === 'grid';
-    const cardWidth = isGridView ? (width - 48) / 2 : width - 32; // Account for padding and gap
-    
-    return (
-      <Animated.View
-        style={{
-          opacity: fadeAnim,
-          width: cardWidth,
-          transform: [{
-            translateY: fadeAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [30, 0],
-            }),
-          }],
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => handleNotePress(note)}
-          activeOpacity={0.7}
-        >
-          <Card 
-            style={[
-              styles.noteCard, 
-              { backgroundColor: theme.colors.surface },
-              isGridView && styles.gridNoteCard
-            ]} 
-            elevation={3}
-          >
-            <Card.Content style={[
-              styles.noteContent,
-              isGridView && styles.gridNoteContent
-            ]}>
-              <View style={[
-                styles.noteHeader,
-                isGridView && styles.gridNoteHeader
-              ]}>
-                <View style={styles.noteHeaderLeft}>
-                  <Avatar.Icon
-                    size={isGridView ? 36 : 48}
-                    icon={getToneIcon(note.tone)}
-                    style={{ backgroundColor: getToneColor(note.tone) + '20' }}
-                    color={getToneColor(note.tone)}
-                  />
-                  <View style={styles.noteTitleContainer}>
-                    <Text 
-                      variant={isGridView ? "titleSmall" : "titleMedium"} 
-                      style={[styles.noteTitle, { color: theme.colors.onSurface }]} 
-                      numberOfLines={isGridView ? 3 : 2}
-                    >
-                      {note.title || 'Untitled Note'}
-                    </Text>
-                    {!isGridView && (
-                      <Text 
-                        variant="bodySmall" 
-                        style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
-                      >
-                        {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'} • {(note.plainText || '').split(' ').filter(word => word.length > 0).length} words
-                      </Text>
-                    )}
-                  </View>
-                </View>
-                {!isGridView && (
-                  <IconButton
-                    icon="dots-vertical"
-                    size={20}
-                    iconColor={theme.colors.onSurfaceVariant}
-                    onPress={() => {}}
-                    style={styles.menuButton}
-                  />
-                )}
-              </View>
-
-              <Text 
-                variant="bodyMedium" 
-                style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}
-                numberOfLines={isGridView ? 2 : 3}
-              >
-                {note.plainText || 'No content available'}
-              </Text>
-
-              <View style={[
-                styles.noteFooter,
-                isGridView && styles.gridNoteFooter
-              ]}>
-                <Chip
-                  icon={getToneIcon(note.tone)}
-                  style={[styles.toneChip, { backgroundColor: getToneColor(note.tone) + '15' }]}
-                  textStyle={{ color: getToneColor(note.tone), fontSize: isGridView ? 10 : 12, fontWeight: '600' }}
-                  compact
-                >
-                  {note.tone || 'unknown'}
-                </Chip>
-                
-                {isGridView && (
-                  <Text 
-                    variant="labelSmall" 
-                    style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
-                  >
-                    {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
-                  </Text>
-                )}
-                
-                {!isGridView && note.tags && note.tags.length > 0 && (
-                  <View style={styles.tagsContainer}>
-                    {note.tags.slice(0, 2).map((tag, tagIndex) => (
-                      <Chip
-                        key={tagIndex}
-                        style={[styles.tagChip, { backgroundColor: theme.colors.primaryContainer }]}
-                        textStyle={{ color: theme.colors.onPrimaryContainer, fontSize: 10 }}
-                        compact
-                      >
-                        #{tag}
-                      </Chip>
-                    ))}
-                    {note.tags.length > 2 && (
-                      <Text style={[styles.moreTagsText, { color: theme.colors.onSurfaceVariant }]}>
-                        +{note.tags.length - 2} more
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            </Card.Content>
-          </Card>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
-
-  const renderEmptyState = () => {
-    const isSearching = searchQuery.trim().length > 0 || selectedTone !== null;
-    
-    if (isSearching) {
-      // Show filtered empty state
+  const renderContent = () => {
+    if (isLoading) {
       return (
-        <View style={styles.emptyContainer}>
-          <Surface style={[styles.emptyIconContainer, { backgroundColor: theme.colors.secondaryContainer }]} elevation={0}>
-            <Icon name="magnify-close" size={64} color={theme.colors.secondary} />
-          </Surface>
-          <Text variant="headlineMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-            No Results Found
+        <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.loadingText, { color: theme.colors.onSurfaceVariant }]}>
+            Loading your notes...
           </Text>
-          <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
-            Try adjusting your search or filter criteria
-          </Text>
-          <Button
-            mode="outlined"
-            icon="filter-remove"
-            onPress={() => {
-              setSearchQuery('');
-              setSelectedTone(null);
-            }}
-            style={styles.emptyButton}
-          >
-            Clear Filters
-          </Button>
         </View>
       );
     }
-    
-    // Show first-time user empty state
-    return (
-      <View style={styles.emptyContainer}>
-        <Surface style={[styles.emptyIconContainer, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
-          <Icon name="rocket-launch" size={72} color={theme.colors.primary} />
-        </Surface>
-        <Text variant="headlineLarge" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-          Welcome to NoteSpark AI! 🎉
-        </Text>
-        <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
-          Transform your documents into intelligent, AI-enhanced notes in seconds
-        </Text>
-        
-        <View style={styles.emptyFeatures}>
-          <View style={styles.emptyFeature}>
-            <Icon name="camera-plus" size={24} color={theme.colors.primary} />
-            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
-              Scan documents with OCR
-            </Text>
-          </View>
-          <View style={styles.emptyFeature}>
-            <Icon name="robot" size={24} color={theme.colors.primary} />
-            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
-              AI-powered tone enhancement
-            </Text>
-          </View>
-          <View style={styles.emptyFeature}>
-            <Icon name="text-box-edit" size={24} color={theme.colors.primary} />
-            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
-              Rich text editing with auto-save
-            </Text>
-          </View>
-        </View>
 
-        <Button
-          mode="contained"
-          icon="camera-plus"
-          onPress={handleScanNew}
-          style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]}
-          contentStyle={styles.emptyButtonContent}
-          labelStyle={styles.emptyButtonLabel}
-        >
-          Scan Your First Document
-        </Button>
-        
-        <Button
-          mode="outlined"
-          icon="note-plus"
-          onPress={() => navigation.navigate('Editor', { noteText: '', tone: 'professional' })}
-          style={[styles.emptyButton, { marginTop: 12 }]}
-        >
-          Or Create a Blank Note
-        </Button>
-      </View>
+    if (filteredNotes.length === 0) {
+      return (
+        <LibraryEmptyState
+          isSearching={searchQuery.trim().length > 0 || selectedTone !== null}
+          onClearFilters={() => {
+            setSearchQuery('');
+            setSelectedTone(null);
+          }}
+          onScanNew={handleScanNew}
+          onNewNote={() => navigation.navigate('Editor', { noteText: '', tone: 'professional' })}
+        />
+      );
+    }
+
+    return (
+      <FlashList
+        data={filteredNotes}
+        renderItem={renderNoteCard}
+        keyExtractor={(item: Note) => item.id}
+        contentContainerStyle={styles.notesList}
+        showsVerticalScrollIndicator={false}
+        estimatedItemSize={viewMode === 'grid' ? 180 : 150}
+        numColumns={viewMode === 'grid' ? 2 : 1}
+        key={viewMode} // Re-render on viewMode change
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={handleRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+        ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 12 : 0 }} />}
+      />
     );
   };
 
-  const toneFilters = [
-    { label: 'All', value: null, icon: 'filter-variant' },
-    { label: 'Professional', value: 'professional', icon: 'briefcase' },
-    { label: 'Casual', value: 'casual', icon: 'chat' },
-    { label: 'Academic', value: 'academic', icon: 'school' },
-    { label: 'Creative', value: 'creative', icon: 'palette' },
-    { label: 'Technical', value: 'technical', icon: 'code-tags' },
-  ];
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header with Search and Filters */}
-      <Surface style={[styles.header, { backgroundColor: theme.colors.surface }]} elevation={2}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerTop}>
-            <Text variant="headlineSmall" style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
-              My Library
-            </Text>
-            <View style={styles.headerActions}>
-              <IconButton
-                icon="refresh"
-                size={24}
-                iconColor={theme.colors.primary}
-                onPress={() => {
-                  console.log('LibraryScreen: Manual refresh triggered');
-                  setIsRefreshing(true);
-                  loadNotes();
-                }}
-              />
-              <IconButton
-                icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
-                size={24}
-                iconColor={theme.colors.onSurface}
-                onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              />
-              <Menu
-                visible={menuVisible}
-                onDismiss={() => setMenuVisible(false)}
-                anchor={
-                  <IconButton
-                    icon="sort"
-                    size={24}
-                    iconColor={theme.colors.onSurface}
-                    onPress={() => setMenuVisible(true)}
-                  />
-                }
-              >
-                <Menu.Item onPress={() => setSortBy('date')} title="Sort by Date" />
-                <Menu.Item onPress={() => setSortBy('title')} title="Sort by Title" />
-                <Menu.Item onPress={() => setSortBy('tone')} title="Sort by Tone" />
-              </Menu>
-            </View>
-          </View>
-          
-          <Searchbar
-            placeholder="Search notes, content, tags..."
-            onChangeText={handleSearch}
-            value={searchQuery}
-            style={[styles.searchbar, { backgroundColor: theme.colors.surfaceVariant }]}
-            inputStyle={{ fontSize: 14 }}
-            iconColor={theme.colors.onSurfaceVariant}
-          />
-          
-          <View style={styles.filters}>
-            {toneFilters.slice(0, 4).map(filter => (
-              <Chip
-                key={filter.label}
-                selected={selectedTone === filter.value}
-                onPress={() => handleToneFilter(filter.value)}
-                style={[
-                  styles.filterChip,
-                  selectedTone === filter.value && { backgroundColor: theme.colors.primaryContainer }
-                ]}
-                textStyle={{ 
-                  fontSize: 12, 
-                  color: selectedTone === filter.value ? theme.colors.onPrimaryContainer : theme.colors.onSurfaceVariant 
-                }}
-                icon={filter.icon}
-                compact
-              >
-                {filter.label}
-              </Chip>
-            ))}
-          </View>
-        </View>
-      </Surface>
-
-      {/* Notes List */}
-      {(() => {
-        console.log('LibraryScreen: Rendering decision - isLoading:', isLoading, 'filteredNotes.length:', filteredNotes.length);
-        if (isLoading) {
-          return (
-            <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={[styles.loadingText, { color: theme.colors.onSurfaceVariant }]}>
-                Loading your notes...
-              </Text>
-            </View>
-          );
-        } else if (filteredNotes.length === 0) {
-          return renderEmptyState();
-        } else {
-          return (
-            <FlatList
-              data={filteredNotes}
-              renderItem={renderNoteCard}
-              keyExtractor={(item: Note) => item.id}
-              contentContainerStyle={styles.notesList}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl 
-                  refreshing={isRefreshing} 
-                  onRefresh={handleRefresh}
-                  colors={[theme.colors.primary]}
-                  tintColor={theme.colors.primary}
-                />
-              }
-              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-            />
-          );
-        }
-      })()}      {/* Floating Action Button */}
+      <LibraryHeader
+        searchQuery={searchQuery}
+        onSearch={setSearchQuery}
+        selectedTone={selectedTone}
+        onToneFilter={setSelectedTone}
+        viewMode={viewMode}
+        onViewModeChange={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        onRefresh={handleRefresh}
+      />
+      
+      {renderContent()}
+      
       <FAB
         icon="camera-plus"
         onPress={handleScanNew}
@@ -562,148 +207,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingBottom: 16,
-  },
-  headerContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  searchbar: {
-    elevation: 0,
-    marginBottom: 16,
-    borderRadius: 12,
-  },
-  filters: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  filterChip: {
-    height: 36,
-    borderRadius: 18,
-  },
   notesList: {
-    padding: 16,
+    paddingHorizontal: 8,
     paddingTop: 8,
-  },
-  noteCard: {
-    borderRadius: 16,
-    marginHorizontal: 4,
-    marginVertical: 2,
-  },
-  noteContent: {
-    padding: 16,
-  },
-  noteHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  noteHeaderLeft: {
-    flexDirection: 'row',
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  noteTitleContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  noteTitle: {
-    fontWeight: 'bold',
-    lineHeight: 24,
-    marginBottom: 4,
-  },
-  noteDate: {
-    fontSize: 12,
-    opacity: 0.7,
-  },
-  menuButton: {
-    margin: 0,
-  },
-  notePreview: {
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  noteFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  toneChip: {
-    height: 28,
-    borderRadius: 14,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tagChip: {
-    height: 24,
-    borderRadius: 12,
-  },
-  moreTagsText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontWeight: 'bold',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  emptyDescription: {
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-    opacity: 0.8,
-  },
-  emptyFeatures: {
-    alignSelf: 'stretch',
-    marginBottom: 32,
-  },
-  emptyFeature: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 16,
-  },
-  emptyButton: {
-    borderRadius: 24,
-    elevation: 4,
-  },
-  emptyButtonContent: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  emptyButtonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   fab: {
     position: 'absolute',
@@ -721,25 +227,5 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     textAlign: 'center',
-  },
-  // Grid-specific styles
-  gridNoteCard: {
-    marginHorizontal: 6,
-  },
-  gridNoteContent: {
-    paddingBottom: 12,
-  },
-  gridNoteHeader: {
-    marginBottom: 8,
-  },
-  gridNoteFooter: {
-    marginTop: 8,
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-  },
-  gridNoteDate: {
-    marginTop: 4,
-    fontSize: 10,
-    opacity: 0.7,
   },
 });
