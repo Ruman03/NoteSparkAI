@@ -16,12 +16,11 @@ import {
   useTheme,
   IconButton,
 } from 'react-native-paper';
-import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
 
 import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
-import { hapticService } from '../services/HapticService';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'Editor'>;
@@ -32,132 +31,58 @@ export default function EditorScreen() {
   const route = useRoute<EditorRouteProp>();
 
   const richText = useRef<RichEditor>(null);
-  const noteIdRef = useRef<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [noteTitle, setNoteTitle] = useState('New Note');
   const [initialContent, setInitialContent] = useState('');
   const [wordCount, setWordCount] = useState(0);
-  const [noteId, setNoteId] = useState<string | null>(null);
-    const [toneMode, setToneMode] = useState<string>('standard');
-  const [lastContent, setLastContent] = useState('');
-  const [isScreenFocused, setIsScreenFocused] = useState(true);
-
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('EditorScreen: Screen focused');
-      setIsScreenFocused(true);
-      return () => {
-        console.log('EditorScreen: Screen unfocused');
-        setIsScreenFocused(false);
-      };
-    }, [])
-  );
 
   const { noteText, tone, originalText } = route.params;
-
-  // Update ref when noteId changes
-  useEffect(() => {
-    noteIdRef.current = noteId;
-  }, [noteId]);
 
   // Auto-save functionality
   const autoSave = async () => {
     if (!richText.current) return;
     
     try {
-      console.log('EditorScreen: Starting auto-save');
       const html = await richText.current.getContentHtml();
       
-      // Only save if content has changed and is not empty
-      if (html && html.trim() !== '' && html !== lastContent) {
-        console.log('EditorScreen: Content changed, proceeding with save');
-        setLastContent(html);
-        setIsSaving(true);
-        
+      if (html && html.trim() !== '') {
         // Calculate word count
         const textContent = html.replace(/<[^>]*>/g, '');
         const words = textContent.trim().split(/\s+/).filter(word => word.length > 0);
         setWordCount(words.length);
-        console.log('EditorScreen: Word count calculated:', words.length);
         
-        // Generate title using AI (only if we don't have a title yet)
-        let currentTitle = noteTitle;
-        if (noteTitle === 'New Note' || !noteTitle) {
-          console.log('EditorScreen: Generating new title with AI');
-          const aiService = AIService.getInstance();
-          currentTitle = await aiService.generateNoteTitle(textContent);
-          setNoteTitle(currentTitle);
-          console.log('EditorScreen: AI generated title:', currentTitle);
-        }
+        // Generate title using AI
+        const aiService = AIService.getInstance();
+        const title = await aiService.generateNoteTitle(textContent);
+        setNoteTitle(title);
         
-        // Save to database - update existing note if we have an ID, create new one if not
+        // Save to database
         const notesService = NotesService.getInstance();
-        
-        if (noteIdRef.current) {
-          // Update existing note
-          console.log('EditorScreen: Updating existing note with ID:', noteIdRef.current);
-          await notesService.updateNote(noteIdRef.current, {
-            title: currentTitle,
-            content: html,
-            plainText: textContent,
-            tone,
-            originalText: originalText || '',
-            tags: [],
-            updatedAt: new Date()
-          });
-          console.log(`EditorScreen: Auto-saved note: Updated existing note with ID: ${noteIdRef.current}`);
-        } else {
-          // Create new note and store the ID
-          console.log('EditorScreen: Creating new note');
-          const newNoteId = await notesService.saveNote({
-            title: currentTitle,
-            content: html,
-            plainText: textContent,
-            tone,
-            originalText: originalText || '',
-            tags: [],
-            createdAt: new Date(),
-            updatedAt: new Date()
-          });
-          setNoteId(newNoteId);
-          noteIdRef.current = newNoteId;
-          console.log(`EditorScreen: Auto-saved note: Created new note with ID: ${newNoteId}`);
-        }
+        await notesService.saveNote({
+          title,
+          content: html,
+          plainText: textContent,
+          tone,
+          originalText: originalText || '',
+          tags: [],
+          createdAt: lastSaved ? new Date(lastSaved) : new Date(),
+          updatedAt: new Date()
+        });
         
         setLastSaved(new Date());
-        setIsSaving(false);
-      } else {
-        console.log('EditorScreen: No content changes detected, skipping save');
       }
     } catch (error) {
-      console.error('EditorScreen: Auto-save failed:', error);
-      setIsSaving(false);
-      
-      // Show user-friendly error message for persistent failures
-      if (error instanceof Error && error.message.includes('timeout')) {
-        console.log('EditorScreen: Save failed due to connection timeout - will retry on next interval');
-      }
+      console.error('Auto-save failed:', error);
     }
   };
 
-  // Auto-save every 3 seconds - clean up when component unmounts
+  // Auto-save every 3 seconds
   useEffect(() => {
-    console.log('EditorScreen: Setting up auto-save interval');
-    const interval = setInterval(() => {
-      if (isScreenFocused) {
-        autoSave();
-      } else {
-        console.log('EditorScreen: Skipping auto-save - screen not focused');
-      }
-    }, 3000);
-    
-    return () => {
-      console.log('EditorScreen: Cleaning up auto-save interval');
-      clearInterval(interval);
-    };
-  }, [isScreenFocused]); // Add isScreenFocused dependency
+    const interval = setInterval(autoSave, 3000);
+    return () => clearInterval(interval);
+  }, [noteTitle]);
 
   useEffect(() => {
     const processNote = async () => {
@@ -204,49 +129,24 @@ export default function EditorScreen() {
         return;
       }
       
-      // Update last content to prevent auto-save conflicts
-      setLastContent(html);
-      
-      // Generate title using AI (only if we don't have a title yet)
-      let currentTitle = noteTitle;
-      if (noteTitle === 'New Note' || !noteTitle) {
-        const aiService = AIService.getInstance();
-        currentTitle = await aiService.generateNoteTitle(textContent);
-        setNoteTitle(currentTitle);
-      }
+      // Generate title using AI
+      const aiService = AIService.getInstance();
+      const title = await aiService.generateNoteTitle(textContent);
       
       // Save note
       const notesService = NotesService.getInstance();
-      
-      if (noteIdRef.current) {
-        // Update existing note
-        await notesService.updateNote(noteIdRef.current, {
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          updatedAt: new Date()
-        });
-      } else {
-        // Create new note and store the ID
-        const newNoteId = await notesService.saveNote({
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-        setNoteId(newNoteId);
-        noteIdRef.current = newNoteId;
-      }
+      await notesService.saveNote({
+        title,
+        content: html,
+        plainText: textContent,
+        tone,
+        originalText: originalText || '',
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
       
       setLastSaved(new Date());
-      hapticService.success();
       Alert.alert('Success', 'Note saved successfully!');
       navigation.navigate('MainTabs', { screen: 'Library' });
     } catch (error) {
@@ -280,7 +180,6 @@ export default function EditorScreen() {
       
       if (richText.current) {
         richText.current.setContentHTML(htmlContent);
-        hapticService.success();
       }
     } catch (error) {
       console.error("Failed to regenerate content:", error);

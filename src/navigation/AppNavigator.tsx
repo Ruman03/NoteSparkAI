@@ -6,6 +6,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, MainTabParamList } from '../types/navigation';
+import { hapticService } from '../services/HapticService';
 
 // Import screens (we'll create these next)
 import HomeScreen from '../screens/HomeScreen';
@@ -38,6 +39,11 @@ function MainTabs() {
           tabBarLabel: 'Home',
           // We'll add icons later
         }}
+        listeners={{
+          tabPress: () => {
+            hapticService.light();
+          },
+        }}
       />
       <Tab.Screen 
         name="Scanner" 
@@ -46,6 +52,11 @@ function MainTabs() {
           tabBarLabel: 'Scan',
           // We'll add icons later
         }}
+        listeners={{
+          tabPress: () => {
+            hapticService.light();
+          },
+        }}
       />
       <Tab.Screen 
         name="Library" 
@@ -53,6 +64,11 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Library',
           // We'll add icons later
+        }}
+        listeners={{
+          tabPress: () => {
+            hapticService.light();
+          },
         }}
       />
     </Tab.Navigator>

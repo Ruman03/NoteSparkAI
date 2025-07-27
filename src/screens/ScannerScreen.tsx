@@ -25,6 +25,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import textRecognition from '@react-native-ml-kit/text-recognition';
 import { RootStackParamList } from '../types/navigation';
+import { hapticService } from '../services/HapticService';
 import Config from 'react-native-config';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,6 +76,7 @@ const ScannerScreen: React.FC = () => {
       return;
     }
 
+    hapticService.medium();
     setIsProcessing(true);
     animateCapture();
     
@@ -94,9 +96,11 @@ const ScannerScreen: React.FC = () => {
         const ocrResult = await textRecognition.recognize(photoPath);
         
         if (ocrResult && ocrResult.text && ocrResult.text.trim()) {
+          hapticService.success();
           setExtractedText(ocrResult.text);
           setShowResults(true);
         } else {
+          hapticService.error();
           Alert.alert(
             'No Text Found',
             'Could not detect any text in the document. Please ensure the document is well-lit and clearly visible.',
@@ -105,6 +109,7 @@ const ScannerScreen: React.FC = () => {
         }
       } catch (ocrError) {
         console.error('OCR Error:', ocrError);
+        hapticService.error();
         Alert.alert(
           'Processing Error',
           'Failed to extract text from the image. Please try again.',
@@ -113,6 +118,7 @@ const ScannerScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Capture error:', error);
+      hapticService.error();
       Alert.alert('Error', 'Failed to capture photo. Please try again.');
     } finally {
       setIsProcessing(false);

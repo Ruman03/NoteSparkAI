@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { authService } from '../services/AuthService';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -8,6 +9,11 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateProfile: (updates: { displayName?: string; photoURL?: string }) => Promise<void>;
+  updateEmail: (newEmail: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  reauthenticate: (email: string, password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,53 +27,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      console.log('AuthContext: Using Firebase auth instance');
-      
-      // Use direct auth import without deprecated method
-      const unsubscribe = auth().onAuthStateChanged((user: FirebaseAuthTypes.User | null) => {
-        console.log('Auth state changed:', user ? 'User logged in' : 'User logged out');
-        setUser(user);
-        setLoading(false);
-      });
-
-      return unsubscribe;
-    } catch (error) {
-      console.error('AuthContext: Firebase auth not available:', error);
+    console.log('AuthContext: Setting up auth state listener');
+    
+    const unsubscribe = authService.onAuthStateChanged((user: FirebaseAuthTypes.User | null) => {
+      console.log('AuthContext: Auth state changed:', user ? 'User logged in' : 'User logged out');
+      setUser(user);
       setLoading(false);
-      return () => {}; // Return empty cleanup function
-    }
+    });
+
+    return unsubscribe;
   }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('SignIn attempt for:', email);
-      await auth().signInWithEmailAndPassword(email, password);
-      console.log('SignIn successful');
+      await authService.signInWithEmailAndPassword(email, password);
     } catch (error: any) {
-      console.error('SignIn error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
       throw error;
     }
   };
 
   const signUp = async (email: string, password: string) => {
     try {
-      console.log('SignUp attempt for:', email);
-      await auth().createUserWithEmailAndPassword(email, password);
-      console.log('SignUp successful');
+      await authService.createUserWithEmailAndPassword(email, password);
     } catch (error: any) {
-      console.error('SignUp error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
       throw error;
     }
   };
 
   const signOut = async () => {
     try {
-      await auth().signOut();
+      await authService.signOut();
     } catch (error) {
       throw error;
     }
@@ -75,7 +64,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resetPassword = async (email: string) => {
     try {
-      await auth().sendPasswordResetEmail(email);
+      await authService.sendPasswordResetEmail(email);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const updateProfile = async (updates: { displayName?: string; photoURL?: string }) => {
+    try {
+      await authService.updateUserProfile(updates);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const updateEmail = async (newEmail: string) => {
+    try {
+      await authService.updateUserEmail(newEmail);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      await authService.updateUserPassword(newPassword);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const deleteAccount = async () => {
+    try {
+      await authService.deleteUser();
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const reauthenticate = async (email: string, password: string) => {
+    try {
+      await authService.reauthenticateWithEmailAndPassword(email, password);
     } catch (error) {
       throw error;
     }
@@ -88,6 +117,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signUp,
     signOut,
     resetPassword,
+    updateProfile,
+    updateEmail,
+    updatePassword,
+    deleteAccount,
+    reauthenticate,
   };
 
   return (

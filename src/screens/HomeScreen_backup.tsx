@@ -12,12 +12,19 @@ import { hapticService } from '../services/HapticService';
 
 const { width } = Dimensions.get('window');
 
+interface Stats {
+  totalNotes: number;
+  totalWords: number;
+  notesToday: number;
+  streak: number;
+}
+
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const theme = useTheme();
   const { user, signOut } = useAuth();
   const [recentNotes, setRecentNotes] = useState<Note[]>([]);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<Stats>({
     totalNotes: 0,
     totalWords: 0,
     notesToday: 0,
@@ -52,7 +59,7 @@ export default function HomeScreen() {
   };
 
   // Calculate comprehensive statistics
-  const calculateStats = (notes: Note[]) => {
+  const calculateStats = (notes: Note[]): Stats => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     

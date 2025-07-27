@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import type { ToneSelectionScreenNavigationProp, RootStackParamList } from '../types/navigation';
 import { AIService } from '../services/AIService';
+import { hapticService } from '../services/HapticService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const { width } = Dimensions.get('window');
@@ -58,12 +59,14 @@ export default function ToneSelectionScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleToneSelect = (toneId: 'professional' | 'casual' | 'simplified') => {
+    hapticService.light();
     setSelectedTone(toneId);
   };
 
   const handleContinue = async () => {
     if (!selectedTone) return;
 
+    hapticService.medium();
     setIsProcessing(true);
     try {
       const aiService = AIService.getInstance();
@@ -72,6 +75,7 @@ export default function ToneSelectionScreen() {
         tone: selectedTone
       });
       
+      hapticService.success();
       navigation.navigate('Editor', {
         noteText: result.transformedText,
         tone: selectedTone,

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   StyleSheet, 
-  FlatList, 
   RefreshControl, 
   Animated,
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
+// import { FlashList } from '@shopify/flash-list';
 import { 
   Surface, 
   Text, 
@@ -51,10 +52,13 @@ export default function LibraryScreen() {
   const loadNotes = async () => {
     try {
       console.log('LibraryScreen: Starting to load notes');
+      setIsLoading(true);
       const userNotes = await notesService.getUserNotes();
       console.log('LibraryScreen: Loaded notes:', userNotes.length, 'notes found');
       setNotes(userNotes);
-      setFilteredNotes(userNotes);
+      
+      // Apply current filters to the loaded notes
+      filterNotes(searchQuery, selectedTone, userNotes);
       
       // Animate notes appearance
       Animated.timing(fadeAnim, {
@@ -64,6 +68,8 @@ export default function LibraryScreen() {
       }).start();
     } catch (error) {
       console.error('LibraryScreen: Failed to load notes:', error);
+      setNotes([]);
+      setFilteredNotes([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -85,10 +91,11 @@ export default function LibraryScreen() {
     filterNotes(searchQuery, tone);
   };
 
-  const filterNotes = (query: string, toneFilter: string | null) => {
+  const filterNotes = (query: string, toneFilter: string | null, notesToFilter?: Note[]) => {
     console.log('LibraryScreen: filterNotes called with query:', query, 'toneFilter:', toneFilter);
-    console.log('LibraryScreen: Starting with notes.length:', notes.length);
-    let filtered = notes;
+    const sourceNotes = notesToFilter || notes;
+    console.log('LibraryScreen: Starting with notes.length:', sourceNotes.length);
+    let filtered = sourceNotes;
 
     if (query) {
       filtered = filtered.filter(note => 
@@ -176,10 +183,22 @@ export default function LibraryScreen() {
     }, [])
   );
 
-  const renderNoteCard = ({ item: note, index }: { item: Note, index: number }) => (
+  // Re-filter notes when notes array changes
+  useEffect(() => {
+    if (notes.length > 0) {
+      filterNotes(searchQuery, selectedTone);
+    }
+  }, [notes, searchQuery, selectedTone]);
+
+  const renderNoteCard = ({ item: note, index }: { item: Note, index: number }) => {
+    const isGridView = viewMode === 'grid';
+    const cardWidth = isGridView ? (width - 48) / 2 : width - 32; // Account for padding and gap
+    
+    return (
       <Animated.View
         style={{
           opacity: fadeAnim,
+          width: cardWidth,
           transform: [{
             translateY: fadeAnim.interpolate({
               inputRange: [0, 1],
@@ -193,110 +212,201 @@ export default function LibraryScreen() {
           activeOpacity={0.7}
         >
           <Card 
-            style={[styles.noteCard, { backgroundColor: theme.colors.surface }]} 
+            style={[
+              styles.noteCard, 
+              { backgroundColor: theme.colors.surface },
+              isGridView && styles.gridNoteCard
+            ]} 
             elevation={3}
           >
-            <Card.Content style={styles.noteContent}>
-              <View style={styles.noteHeader}>
+            <Card.Content style={[
+              styles.noteContent,
+              isGridView && styles.gridNoteContent
+            ]}>
+              <View style={[
+                styles.noteHeader,
+                isGridView && styles.gridNoteHeader
+              ]}>
                 <View style={styles.noteHeaderLeft}>
                   <Avatar.Icon
-                    size={48}
+                    size={isGridView ? 36 : 48}
                     icon={getToneIcon(note.tone)}
                     style={{ backgroundColor: getToneColor(note.tone) + '20' }}
-                  color={getToneColor(note.tone)}
-                />
-                <View style={styles.noteTitleContainer}>
-                  <Text 
-                    variant="titleMedium" 
-                    style={[styles.noteTitle, { color: theme.colors.onSurface }]} 
-                    numberOfLines={2}
-                  >
-                    {note.title}
-                  </Text>
-                  <Text 
-                    variant="bodySmall" 
-                    style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
-                  >
-                    {formatDate(new Date(note.updatedAt))} • {note.plainText.split(' ').length} words
-                  </Text>
-                </View>
-              </View>
-              <IconButton
-                icon="dots-vertical"
-                size={20}
-                iconColor={theme.colors.onSurfaceVariant}
-                onPress={() => {}}
-                style={styles.menuButton}
-              />
-            </View>
-
-            <Text 
-              variant="bodyMedium" 
-              style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}
-              numberOfLines={3}
-            >
-              {note.plainText}
-            </Text>
-
-            <View style={styles.noteFooter}>
-              <Chip
-                icon={getToneIcon(note.tone)}
-                style={[styles.toneChip, { backgroundColor: getToneColor(note.tone) + '15' }]}
-                textStyle={{ color: getToneColor(note.tone), fontSize: 12, fontWeight: '600' }}
-                compact
-              >
-                {note.tone}
-              </Chip>
-              
-              {note.tags && note.tags.length > 0 && (
-                <View style={styles.tagsContainer}>
-                  {note.tags.slice(0, 2).map((tag, tagIndex) => (
-                    <Chip
-                      key={tagIndex}
-                      style={[styles.tagChip, { backgroundColor: theme.colors.primaryContainer }]}
-                      textStyle={{ color: theme.colors.onPrimaryContainer, fontSize: 10 }}
-                      compact
+                    color={getToneColor(note.tone)}
+                  />
+                  <View style={styles.noteTitleContainer}>
+                    <Text 
+                      variant={isGridView ? "titleSmall" : "titleMedium"} 
+                      style={[styles.noteTitle, { color: theme.colors.onSurface }]} 
+                      numberOfLines={isGridView ? 3 : 2}
                     >
-                      #{tag}
-                    </Chip>
-                  ))}
-                  {note.tags.length > 2 && (
-                    <Text style={[styles.moreTagsText, { color: theme.colors.onSurfaceVariant }]}>
-                      +{note.tags.length - 2} more
+                      {note.title}
                     </Text>
-                  )}
+                    {!isGridView && (
+                      <Text 
+                        variant="bodySmall" 
+                        style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
+                      >
+                        {formatDate(new Date(note.updatedAt))} • {note.plainText.split(' ').length} words
+                      </Text>
+                    )}
+                  </View>
                 </View>
-              )}
-            </View>
-          </Card.Content>
-        </Card>
-      </TouchableOpacity>
-    </Animated.View>
-  );
+                {!isGridView && (
+                  <IconButton
+                    icon="dots-vertical"
+                    size={20}
+                    iconColor={theme.colors.onSurfaceVariant}
+                    onPress={() => {}}
+                    style={styles.menuButton}
+                  />
+                )}
+              </View>
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Surface style={[styles.emptyIconContainer, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
-        <Icon name="library-outline" size={64} color={theme.colors.primary} />
-      </Surface>
-      <Text variant="headlineMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-        No Notes Yet
-      </Text>
-      <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
-        Start your AI-powered note-taking journey by scanning your first document
-      </Text>
-      <Button
-        mode="contained"
-        icon="camera-plus"
-        onPress={handleScanNew}
-        style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]}
-        contentStyle={styles.emptyButtonContent}
-        labelStyle={styles.emptyButtonLabel}
-      >
-        Scan First Document
-      </Button>
-    </View>
-  );
+              <Text 
+                variant="bodyMedium" 
+                style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}
+                numberOfLines={isGridView ? 2 : 3}
+              >
+                {note.plainText}
+              </Text>
+
+              <View style={[
+                styles.noteFooter,
+                isGridView && styles.gridNoteFooter
+              ]}>
+                <Chip
+                  icon={getToneIcon(note.tone)}
+                  style={[styles.toneChip, { backgroundColor: getToneColor(note.tone) + '15' }]}
+                  textStyle={{ color: getToneColor(note.tone), fontSize: isGridView ? 10 : 12, fontWeight: '600' }}
+                  compact
+                >
+                  {note.tone}
+                </Chip>
+                
+                {isGridView && (
+                  <Text 
+                    variant="labelSmall" 
+                    style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
+                  >
+                    {formatDate(new Date(note.updatedAt))}
+                  </Text>
+                )}
+                
+                {!isGridView && note.tags && note.tags.length > 0 && (
+                  <View style={styles.tagsContainer}>
+                    {note.tags.slice(0, 2).map((tag, tagIndex) => (
+                      <Chip
+                        key={tagIndex}
+                        style={[styles.tagChip, { backgroundColor: theme.colors.primaryContainer }]}
+                        textStyle={{ color: theme.colors.onPrimaryContainer, fontSize: 10 }}
+                        compact
+                      >
+                        #{tag}
+                      </Chip>
+                    ))}
+                    {note.tags.length > 2 && (
+                      <Text style={[styles.moreTagsText, { color: theme.colors.onSurfaceVariant }]}>
+                        +{note.tags.length - 2} more
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            </Card.Content>
+          </Card>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderEmptyState = () => {
+    const isSearching = searchQuery.trim().length > 0 || selectedTone !== null;
+    
+    if (isSearching) {
+      // Show filtered empty state
+      return (
+        <View style={styles.emptyContainer}>
+          <Surface style={[styles.emptyIconContainer, { backgroundColor: theme.colors.secondaryContainer }]} elevation={0}>
+            <Icon name="magnify-close" size={64} color={theme.colors.secondary} />
+          </Surface>
+          <Text variant="headlineMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
+            No Results Found
+          </Text>
+          <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
+            Try adjusting your search or filter criteria
+          </Text>
+          <Button
+            mode="outlined"
+            icon="filter-remove"
+            onPress={() => {
+              setSearchQuery('');
+              setSelectedTone(null);
+            }}
+            style={styles.emptyButton}
+          >
+            Clear Filters
+          </Button>
+        </View>
+      );
+    }
+    
+    // Show first-time user empty state
+    return (
+      <View style={styles.emptyContainer}>
+        <Surface style={[styles.emptyIconContainer, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
+          <Icon name="rocket-launch" size={72} color={theme.colors.primary} />
+        </Surface>
+        <Text variant="headlineLarge" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
+          Welcome to NoteSpark AI! 🎉
+        </Text>
+        <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
+          Transform your documents into intelligent, AI-enhanced notes in seconds
+        </Text>
+        
+        <View style={styles.emptyFeatures}>
+          <View style={styles.emptyFeature}>
+            <Icon name="camera-plus" size={24} color={theme.colors.primary} />
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
+              Scan documents with OCR
+            </Text>
+          </View>
+          <View style={styles.emptyFeature}>
+            <Icon name="robot" size={24} color={theme.colors.primary} />
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
+              AI-powered tone enhancement
+            </Text>
+          </View>
+          <View style={styles.emptyFeature}>
+            <Icon name="text-box-edit" size={24} color={theme.colors.primary} />
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
+              Rich text editing with auto-save
+            </Text>
+          </View>
+        </View>
+
+        <Button
+          mode="contained"
+          icon="camera-plus"
+          onPress={handleScanNew}
+          style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]}
+          contentStyle={styles.emptyButtonContent}
+          labelStyle={styles.emptyButtonLabel}
+        >
+          Scan Your First Document
+        </Button>
+        
+        <Button
+          mode="outlined"
+          icon="note-plus"
+          onPress={() => navigation.navigate('Editor', { noteText: '', tone: 'professional' })}
+          style={[styles.emptyButton, { marginTop: 12 }]}
+        >
+          Or Create a Blank Note
+        </Button>
+      </View>
+    );
+  };
 
   const toneFilters = [
     { label: 'All', value: null, icon: 'filter-variant' },
@@ -386,36 +496,40 @@ export default function LibraryScreen() {
       </Surface>
 
       {/* Notes List */}
-      {isLoading ? (
-        <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={[styles.loadingText, { color: theme.colors.onSurfaceVariant }]}>
-            Loading your notes...
-          </Text>
-        </View>
-      ) : (() => {
-        console.log('LibraryScreen: Rendering decision - filteredNotes.length:', filteredNotes.length);
-        return filteredNotes.length === 0;
-      })() ? (
-        renderEmptyState()
-      ) : (
-        <FlatList
-          data={filteredNotes}
-          renderItem={renderNoteCard}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.notesList}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl 
-              refreshing={isRefreshing} 
-              onRefresh={handleRefresh}
-              colors={[theme.colors.primary]}
-              tintColor={theme.colors.primary}
+      {(() => {
+        console.log('LibraryScreen: Rendering decision - isLoading:', isLoading, 'filteredNotes.length:', filteredNotes.length);
+        if (isLoading) {
+          return (
+            <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <Text style={[styles.loadingText, { color: theme.colors.onSurfaceVariant }]}>
+                Loading your notes...
+              </Text>
+            </View>
+          );
+        } else if (filteredNotes.length === 0) {
+          return renderEmptyState();
+        } else {
+          return (
+            <FlatList
+              data={filteredNotes}
+              renderItem={renderNoteCard}
+              keyExtractor={(item: Note) => item.id}
+              contentContainerStyle={styles.notesList}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl 
+                  refreshing={isRefreshing} 
+                  onRefresh={handleRefresh}
+                  colors={[theme.colors.primary]}
+                  tintColor={theme.colors.primary}
+                />
+              }
+              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
             />
-          }
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        />
-      )}      {/* Floating Action Button */}
+          );
+        }
+      })()}      {/* Floating Action Button */}
       <FAB
         icon="camera-plus"
         onPress={handleScanNew}
@@ -548,8 +662,18 @@ const styles = StyleSheet.create({
   emptyDescription: {
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 32,
+    marginBottom: 24,
     opacity: 0.8,
+  },
+  emptyFeatures: {
+    alignSelf: 'stretch',
+    marginBottom: 32,
+  },
+  emptyFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   emptyButton: {
     borderRadius: 24,
@@ -579,5 +703,25 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     textAlign: 'center',
+  },
+  // Grid-specific styles
+  gridNoteCard: {
+    marginHorizontal: 6,
+  },
+  gridNoteContent: {
+    paddingBottom: 12,
+  },
+  gridNoteHeader: {
+    marginBottom: 8,
+  },
+  gridNoteFooter: {
+    marginTop: 8,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  gridNoteDate: {
+    marginTop: 4,
+    fontSize: 10,
+    opacity: 0.7,
   },
 });
