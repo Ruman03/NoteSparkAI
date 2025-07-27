@@ -118,7 +118,13 @@ export default function HomeScreen() {
   const loadUserData = async () => {
     try {
       setIsLoading(true);
-      const notes = await notesService.getUserNotes();
+      
+      // Use Promise.all to load data concurrently and add a minimum loading time for smooth UX
+      const [notes] = await Promise.all([
+        notesService.getUserNotes(),
+        new Promise(resolve => setTimeout(resolve, 800)) // Minimum 800ms for smooth loading experience
+      ]);
+      
       const calculatedStats = calculateStats(notes);
       setStats(calculatedStats);
       // Get 5 most recent notes
@@ -208,9 +214,24 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <Text variant="headlineMedium" style={{ color: theme.colors.onSurface, textAlign: 'center' }}>
-            Loading your dashboard...
-          </Text>
+          <View style={styles.loadingContent}>
+            <Surface style={[styles.loadingIconContainer, { backgroundColor: theme.colors.primaryContainer }]} elevation={3}>
+              <Icon name="lightning-bolt" size={48} color={theme.colors.primary} />
+            </Surface>
+            <Text variant="headlineSmall" style={[styles.loadingTitle, { color: theme.colors.onSurface }]}>
+              NoteSpark AI
+            </Text>
+            <Text variant="bodyMedium" style={[styles.loadingSubtitle, { color: theme.colors.onSurfaceVariant }]}>
+              Preparing your intelligent dashboard
+            </Text>
+            <View style={styles.loadingIndicator}>
+              <ProgressBar 
+                indeterminate 
+                color={theme.colors.primary}
+                style={styles.progressBar}
+              />
+            </View>
+          </View>
         </View>
       ) : (
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -404,6 +425,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
+  },
+  loadingContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  loadingTitle: {
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
+    textAlign: 'center',
+    marginBottom: 32,
+    opacity: 0.8,
+  },
+  loadingIndicator: {
+    width: 200,
+    alignItems: 'center',
+  },
+  progressBar: {
+    height: 4,
+    borderRadius: 2,
   },
   content: {
     flex: 1,
