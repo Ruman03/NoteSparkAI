@@ -57,11 +57,13 @@ export default function HomeScreen() {
     today.setHours(0, 0, 0, 0);
     
     const totalWords = notes.reduce((sum, note) => {
-      return sum + (note.plainText ? note.plainText.split(/\s+/).length : 0);
+      return sum + (note.plainText ? note.plainText.split(/\s+/).filter(word => word.length > 0).length : 0);
     }, 0);
     
     const notesToday = notes.filter(note => {
+      if (!note.createdAt) return false;
       const noteDate = new Date(note.createdAt);
+      if (isNaN(noteDate.getTime())) return false;
       noteDate.setHours(0, 0, 0, 0);
       return noteDate.getTime() === today.getTime();
     }).length;
@@ -169,13 +171,13 @@ export default function HomeScreen() {
     >
       <Card.Content style={styles.recentNoteContent}>
         <Text variant="titleSmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>
-          {item.title}
+          {item.title || 'Untitled Note'}
         </Text>
         <Text variant="bodySmall" numberOfLines={2} style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
-          {item.plainText}
+          {item.plainText || 'No content available'}
         </Text>
         <Text variant="labelSmall" style={{ color: theme.colors.primary, marginTop: 4 }}>
-          {item.updatedAt.toLocaleDateString()}
+          {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'Unknown date'}
         </Text>
       </Card.Content>
     </Card>
