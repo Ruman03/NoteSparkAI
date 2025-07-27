@@ -55,6 +55,15 @@ export default function LibraryScreen() {
       setIsLoading(true);
       const userNotes = await notesService.getUserNotes();
       console.log('LibraryScreen: Loaded notes:', userNotes.length, 'notes found');
+      console.log('LibraryScreen: Sample note data:', userNotes.length > 0 ? {
+        id: userNotes[0].id,
+        title: userNotes[0].title,
+        plainText: userNotes[0].plainText ? userNotes[0].plainText.substring(0, 50) + '...' : 'No content',
+        tone: userNotes[0].tone,
+        hasTitle: !!userNotes[0].title,
+        hasPlainText: !!userNotes[0].plainText,
+        hasTags: !!userNotes[0].tags
+      } : 'No notes found');
       setNotes(userNotes);
       
       // Apply current filters to the loaded notes
@@ -95,32 +104,37 @@ export default function LibraryScreen() {
     console.log('LibraryScreen: filterNotes called with query:', query, 'toneFilter:', toneFilter);
     const sourceNotes = notesToFilter || notes;
     console.log('LibraryScreen: Starting with notes.length:', sourceNotes.length);
-    let filtered = sourceNotes;
+    let filtered = [...sourceNotes]; // Create a copy to avoid mutation
 
-    if (query) {
+    // Apply search filter only if query is not empty
+    if (query && query.trim().length > 0) {
+      const queryLower = query.toLowerCase().trim();
       filtered = filtered.filter(note => 
-        note.title.toLowerCase().includes(query.toLowerCase()) ||
-        note.plainText.toLowerCase().includes(query.toLowerCase()) ||
-        note.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+        (note.title && note.title.toLowerCase().includes(queryLower)) ||
+        (note.plainText && note.plainText.toLowerCase().includes(queryLower)) ||
+        (note.tags && note.tags.some(tag => tag.toLowerCase().includes(queryLower)))
       );
       console.log('LibraryScreen: After query filter, filtered.length:', filtered.length);
     }
 
+    // Apply tone filter only if a tone is selected
     if (toneFilter) {
       filtered = filtered.filter(note => note.tone === toneFilter);
       console.log('LibraryScreen: After tone filter, filtered.length:', filtered.length);
     }
 
-    // Sort notes
+    // Sort notes with null safety
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'title':
-          return a.title.localeCompare(b.title);
+          return (a.title || '').localeCompare(b.title || '');
         case 'tone':
-          return a.tone.localeCompare(b.tone);
+          return (a.tone || '').localeCompare(b.tone || '');
         case 'date':
         default:
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          const aDate = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const bDate = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return bDate - aDate;
       }
     });
 
