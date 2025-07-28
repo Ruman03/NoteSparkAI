@@ -440,6 +440,7 @@ const styles = StyleSheet.create({
   },
   permissionIcon: {
     marginBottom: 24,
+    alignSelf: 'center',
   },
   permissionTitle: {
     textAlign: 'center',

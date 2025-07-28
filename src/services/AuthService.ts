@@ -2,6 +2,18 @@
 // Firebase authentication operations with modern modular API
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { Platform } from 'react-native';
+
+// Import Apple Authentication only on iOS
+let appleAuth: any = null;
+if (Platform.OS === 'ios') {
+  try {
+    appleAuth = require('@invertase/react-native-apple-authentication');
+  } catch (error) {
+    console.log('Apple Authentication not available');
+  }
+}
 
 interface AuthResult {
   user: FirebaseAuthTypes.User;
@@ -10,13 +22,30 @@ interface AuthResult {
 export class AuthService {
   private static instance: AuthService;
 
-  private constructor() {}
+  private constructor() {
+    this.configureGoogleSignIn();
+  }
 
   static getInstance(): AuthService {
     if (!AuthService.instance) {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
+  }
+
+  private configureGoogleSignIn() {
+    try {
+      console.log('AuthService: Configuring Google Sign-In');
+      GoogleSignin.configure({
+        webClientId: '421242097567-ob54ji0c1ipkeki4nc48b3t7q598frfk.apps.googleusercontent.com',
+        offlineAccess: true,
+        hostedDomain: '',
+        forceCodeForRefreshToken: true,
+      });
+      console.log('AuthService: Google Sign-In configured successfully');
+    } catch (error) {
+      console.error('AuthService: Error configuring Google Sign-In', error);
+    }
   }
 
   /**
@@ -46,21 +75,6 @@ export class AuthService {
       return { user: userCredential.user };
     } catch (error: any) {
       console.error('AuthService: SignUp error:', error);
-      const friendlyError = this.transformFirebaseError(error);
-      throw new Error(friendlyError);
-    }
-  }
-
-  /**
-   * Sign out current user using modern API
-   */
-  async signOut(): Promise<void> {
-    try {
-      console.log('AuthService: SignOut attempt');
-      await auth().signOut();
-      console.log('AuthService: SignOut successful');
-    } catch (error: any) {
-      console.error('AuthService: SignOut error:', error);
       const friendlyError = this.transformFirebaseError(error);
       throw new Error(friendlyError);
     }
@@ -194,6 +208,119 @@ export class AuthService {
       console.log('AuthService: User reauthenticated successfully');
     } catch (error: any) {
       console.error('AuthService: Reauthentication error:', error);
+      const friendlyError = this.transformFirebaseError(error);
+      throw new Error(friendlyError);
+    }
+  }
+
+  /**
+   * Sign in with Google
+   */
+  async signInWithGoogle(): Promise<AuthResult> {
+    try {
+      console.log('AuthService: Starting Google Sign-In flow');
+      
+      // Check if device has Google Play Services
+      await GoogleSignin.hasPlayServices();
+      
+      // Get the user's ID token
+      const { idToken } = await GoogleSignin.signIn();
+      console.log('AuthService: Google ID Token received');
+      
+      // Create a Google credential with the token
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      
+      // Sign-in the user with the credential
+      const userCredential = await auth().signInWithCredential(googleCredential);
+      console.log('AuthService: Firebase sign-in with Google successful');
+      
+      return { user: userCredential.user };
+    } catch (error: any) {
+      console.error('AuthService: Google Sign-In failed', error);
+      
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        throw new Error('An account already exists with the same email address but different sign-in credentials.');
+      }
+      
+      if (error.code === 'DEVELOPER_ERROR') {
+        throw new Error('Google Sign-In configuration error. Please ensure the app is properly configured in Firebase Console with the correct SHA-1 fingerprint.');
+      }
+      
+      if (error.code === '-5') { // DEVELOPER_ERROR code
+        throw new Error('Google Sign-In setup incomplete. The app needs to be registered in Google Cloud Console with the correct package name and SHA-1 certificate.');
+      }
+      
+      throw new Error(`Google Sign-In failed: ${error.message || error.code || 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Sign in with Apple (iOS only)
+   */
+  async signInWithApple(): Promise<AuthResult> {
+    try {
+      if (Platform.OS !== 'ios') {
+        throw new Error('Apple Sign-In is only available on iOS devices.');
+      }
+
+      if (!appleAuth) {
+        throw new Error('Apple Authentication is not available.');
+      }
+
+      console.log('AuthService: Starting Apple Sign-In flow');
+
+      // Start the sign-in request
+      const appleAuthRequestResponse = await appleAuth.appleAuth.performRequest({
+        requestedOperation: appleAuth.appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.appleAuth.Scope.EMAIL, appleAuth.appleAuth.Scope.FULL_NAME],
+      });
+
+      // Ensure Apple returned a user identityToken
+      if (!appleAuthRequestResponse.identityToken) {
+        throw new Error('Apple Sign-In failed - no identify token returned');
+      }
+
+      console.log('AuthService: Apple ID Token received');
+
+      // Create a Firebase credential from the response
+      const { identityToken, nonce } = appleAuthRequestResponse;
+      const appleCredential = auth.AppleAuthProvider.credential(identityToken, nonce);
+
+      // Sign the user in with the credential
+      const userCredential = await auth().signInWithCredential(appleCredential);
+      console.log('AuthService: Firebase sign-in with Apple successful');
+
+      return { user: userCredential.user };
+    } catch (error: any) {
+      console.error('AuthService: Apple Sign-In failed', error);
+      
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        throw new Error('An account already exists with the same email address but different sign-in credentials.');
+      }
+      
+      throw new Error(`Apple Sign-In failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Enhanced sign out with social providers
+   */
+  async signOut(): Promise<void> {
+    try {
+      console.log('AuthService: SignOut attempt');
+      
+      // Sign out from Google if signed in
+      const isGoogleSignedIn = await GoogleSignin.isSignedIn();
+      if (isGoogleSignedIn) {
+        await GoogleSignin.signOut();
+        console.log('AuthService: Google sign-out successful');
+      }
+      
+      // Sign out from Firebase
+      await auth().signOut();
+      console.log('AuthService: Firebase sign-out successful');
+    } catch (error: any) {
+      console.error('AuthService: SignOut error:', error);
       const friendlyError = this.transformFirebaseError(error);
       throw new Error(friendlyError);
     }
