@@ -10,9 +10,10 @@ interface NoteCardProps {
   note: Note;
   viewMode: 'list' | 'grid';
   onPress: (note: Note) => void;
+  onShowActions?: (note: Note) => void;
 }
 
-const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress }) => {
+const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActions }) => {
   const theme = useTheme();
   const isGridView = viewMode === 'grid';
   const cardWidth = isGridView ? (width - 48) / 2 : width - 32;
@@ -59,7 +60,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress }) => {
                 icon="dots-vertical"
                 size={20}
                 iconColor={theme.colors.onSurfaceVariant}
-                onPress={() => { /* Implement menu */ }}
+                onPress={() => onShowActions?.(note)}
                 style={styles.menuButton}
               />
             )}

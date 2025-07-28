@@ -24,6 +24,7 @@ import { hapticService } from '../services/HapticService';
 import LibraryHeader from '../components/library/LibraryHeader';
 import NoteCard from '../components/library/NoteCard';
 import LibraryEmptyState from '../components/library/LibraryEmptyState';
+import NoteActionsModal from '../components/library/NoteActionsModal';
 
 const { width } = Dimensions.get('window');
 
@@ -39,6 +40,10 @@ export default function LibraryScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'tone'>('date');
+  
+  // Actions modal state
+  const [showActionsModal, setShowActionsModal] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
 
   const loadNotes = useCallback(async () => {
     const user = auth().currentUser;
@@ -123,13 +128,32 @@ export default function LibraryScreen() {
     navigation.navigate('Scanner');
   }, [navigation]);
 
+  const handleShowActions = useCallback((note: Note) => {
+    setSelectedNote(note);
+    setShowActionsModal(true);
+  }, []);
+
+  const handleNoteDeleted = useCallback((noteId: string) => {
+    hapticService.light();
+    setNotes(prev => prev.filter(note => note.id !== noteId));
+    setShowActionsModal(false);
+    setSelectedNote(null);
+  }, []);
+
+  const handleEditNote = useCallback((note: Note) => {
+    setShowActionsModal(false);
+    setSelectedNote(null);
+    handleNotePress(note);
+  }, [handleNotePress]);
+
   const renderNoteCard = useCallback(({ item }: { item: Note }) => (
     <NoteCard 
       note={item} 
       onPress={() => handleNotePress(item)} 
+      onShowActions={() => handleShowActions(item)}
       viewMode={viewMode}
     />
-  ), [viewMode, handleNotePress]);
+  ), [viewMode, handleNotePress, handleShowActions]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -201,6 +225,14 @@ export default function LibraryScreen() {
         onPress={handleScanNew}
         style={[styles.fab, { backgroundColor: theme.colors.primary }]}
         color={theme.colors.onPrimary}
+      />
+
+      <NoteActionsModal
+        visible={showActionsModal}
+        note={selectedNote}
+        onDismiss={() => setShowActionsModal(false)}
+        onEditNote={handleEditNote}
+        onNoteDeleted={handleNoteDeleted}
       />
     </SafeAreaView>
   );
