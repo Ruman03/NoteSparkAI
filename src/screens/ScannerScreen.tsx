@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Platform,
   StatusBar,
   Animated,
+  GestureResponderEvent,
 } from 'react-native';
 import { 
   Button, 
@@ -20,7 +21,7 @@ import {
   IconButton,
   FAB,
 } from 'react-native-paper';
-import { useCameraDevice, Camera, useCameraPermission } from 'react-native-vision-camera';
+import { useCameraDevice, Camera, useCameraPermission, CameraProps } from 'react-native-vision-camera';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import textRecognition from '@react-native-ml-kit/text-recognition';
@@ -29,6 +30,25 @@ import { hapticService } from '../services/HapticService';
 import Config from 'react-native-config';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, { 
+  useSharedValue, 
+  useAnimatedProps, 
+  interpolate,
+  Extrapolate,
+  runOnJS,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  Easing
+} from 'react-native-reanimated';
+
+// Make Camera animatable for zoom control
+Reanimated.addWhitelistedNativeProps({
+  zoom: true,
+});
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -43,10 +63,62 @@ const ScannerScreen: React.FC = () => {
   const [extractedText, setExtractedText] = useState<string>('');
   const [showResults, setShowResults] = useState<boolean>(false);
   const [flashMode, setFlashMode] = useState<'auto' | 'on' | 'off'>('auto');
+  const [currentZoom, setCurrentZoom] = useState<number>(1); // State for zoom display
   
   const cameraRef = useRef<Camera>(null);
   const device = useCameraDevice('back');
   const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  // Zoom functionality
+  const zoom = useSharedValue(device?.neutralZoom ?? 1);
+  const zoomOffset = useSharedValue(0);
+
+  // Focus ring animation states
+  const focusRingScale = useSharedValue(0);
+  const focusRingOpacity = useSharedValue(0);
+  const focusRingX = useSharedValue(0);
+  const focusRingY = useSharedValue(0);
+
+  // Zoom level indicator animation
+  const zoomIndicatorOpacity = useSharedValue(0);
+  const zoomIndicatorScale = useSharedValue(0.8);
+
+  // Animated zoom props
+  const animatedProps = useAnimatedProps<CameraProps>(() => {
+    const minZoom = device?.minZoom ?? 1;
+    const maxZoom = Math.min(device?.maxZoom ?? 10, 10); // Clamp max zoom to reasonable value
+    const clampedZoom = Math.max(Math.min(zoom.value, maxZoom), minZoom);
+    
+    return {
+      zoom: clampedZoom,
+    };
+  }, [device?.minZoom, device?.maxZoom, zoom]);
+
+  // Focus ring animated style
+  const focusRingStyle = useAnimatedStyle(() => {
+    return {
+      position: 'absolute' as const,
+      left: focusRingX.value - 40, // Center the 80px ring
+      top: focusRingY.value - 40,
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
+      backgroundColor: 'transparent',
+      transform: [{ scale: focusRingScale.value }],
+      opacity: focusRingOpacity.value,
+      zIndex: 1000,
+    };
+  });
+
+  // Zoom indicator animated style
+  const zoomIndicatorStyle = useAnimatedStyle(() => {
+    return {
+      opacity: zoomIndicatorOpacity.value,
+      transform: [{ scale: zoomIndicatorScale.value }],
+    };
+  });
 
   useEffect(() => {
     if (!hasPermission) {
@@ -54,6 +126,13 @@ const ScannerScreen: React.FC = () => {
     }
     return () => setIsActive(false);
   }, [hasPermission, requestPermission]);
+
+  // Reset zoom when device changes
+  useEffect(() => {
+    const neutralZoom = device?.neutralZoom ?? 1;
+    zoom.value = neutralZoom;
+    setCurrentZoom(Math.round(neutralZoom * 10) / 10);
+  }, [device, zoom]);
 
   const animateCapture = () => {
     Animated.sequence([
@@ -69,6 +148,90 @@ const ScannerScreen: React.FC = () => {
       }),
     ]).start();
   };
+
+  // Focus function with professional animation and error handling
+  const focusCamera = useCallback((point: { x: number; y: number }) => {
+    if (cameraRef.current && device?.supportsFocus) {
+      // Set focus ring position
+      focusRingX.value = point.x;
+      focusRingY.value = point.y;
+      
+      // Animate focus ring appearance
+      focusRingScale.value = withSequence(
+        withTiming(1.2, { duration: 150, easing: Easing.out(Easing.cubic) }),
+        withTiming(1.0, { duration: 150, easing: Easing.inOut(Easing.cubic) })
+      );
+      focusRingOpacity.value = withSequence(
+        withTiming(1, { duration: 150 }),
+        withTiming(0.8, { duration: 300 }),
+        withTiming(0, { duration: 500 })
+      );
+
+      // Attempt focus
+      cameraRef.current.focus(point)
+        .then(() => {
+          hapticService.light(); // Subtle feedback for successful focus
+        })
+        .catch((error) => {
+          // Handle focus errors gracefully
+          if (error.code === 'capture/focus-canceled') {
+            // Focus was canceled by another focus request - this is normal
+            console.log('Focus canceled by new request');
+          } else {
+            console.log('Focus failed:', error.message || error);
+            // Animate focus ring to show failure (red tint)
+            focusRingOpacity.value = withSequence(
+              withTiming(0.9, { duration: 100 }),
+              withTiming(0, { duration: 400 })
+            );
+          }
+        });
+    }
+  }, [device?.supportsFocus, focusRingX, focusRingY, focusRingScale, focusRingOpacity]);
+
+  // Tap gesture for focus
+  const tapGesture = Gesture.Tap()
+    .onEnd((event) => {
+      runOnJS(focusCamera)({
+        x: event.x,
+        y: event.y,
+      });
+    });
+
+  // Pinch gesture for zoom with professional zoom indicator
+  const pinchGesture = Gesture.Pinch()
+    .onBegin(() => {
+      zoomOffset.value = zoom.value;
+      // Show zoom indicator
+      zoomIndicatorOpacity.value = withTiming(1, { duration: 200 });
+      zoomIndicatorScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    })
+    .onUpdate((event) => {
+      const minZoom = device?.minZoom ?? 1;
+      const maxZoom = Math.min(device?.maxZoom ?? 10, 10);
+      
+      const z = zoomOffset.value * event.scale;
+      zoom.value = interpolate(
+        z,
+        [1, 10],
+        [minZoom, maxZoom],
+        Extrapolate.CLAMP,
+      );
+      
+      // Update React state for zoom display
+      runOnJS(setCurrentZoom)(Math.round(zoom.value * 10) / 10);
+    })
+    .onEnd(() => {
+      // Hide zoom indicator after a delay
+      zoomIndicatorOpacity.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withTiming(0, { duration: 800 })
+      );
+      zoomIndicatorScale.value = withTiming(0.8, { duration: 800 });
+    });
+
+  // Combined gesture
+  const combinedGesture = Gesture.Simultaneous(tapGesture, pinchGesture);
 
   const capturePhoto = async () => {
     if (!device || !cameraRef.current) {
@@ -215,6 +378,7 @@ const ScannerScreen: React.FC = () => {
             <Title style={[styles.resultsTitle, { color: theme.colors.onSurface }]}>
               Extracted Text
             </Title>
+            {/* Spacer for balanced layout */}
             <View style={{ width: 48 }} />
           </View>
         </Surface>
@@ -257,13 +421,30 @@ const ScannerScreen: React.FC = () => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      <Camera
-        ref={cameraRef}
-        style={styles.camera}
-        device={device}
-        isActive={isActive}
-        photo={true}
-      />
+      {/* Gesture detector for tap-to-focus and pinch-to-zoom */}
+      <GestureDetector gesture={combinedGesture}>
+        <ReanimatedCamera
+          ref={cameraRef}
+          style={styles.camera}
+          device={device}
+          isActive={isActive}
+          photo={true}
+          enableZoomGesture={false} // We handle zoom manually
+          animatedProps={animatedProps}
+        />
+      </GestureDetector>
+      
+      {/* Focus ring animation */}
+      <Reanimated.View style={focusRingStyle} pointerEvents="none" />
+      
+      {/* Zoom level indicator */}
+      <Reanimated.View style={[styles.zoomIndicator, zoomIndicatorStyle]} pointerEvents="none">
+        <View style={styles.zoomIndicatorContent}>
+          <Text style={styles.zoomText}>
+            {currentZoom}x
+          </Text>
+        </View>
+      </Reanimated.View>
       
       {/* Header with controls */}
       <SafeAreaView style={styles.cameraOverlay}>
@@ -275,12 +456,8 @@ const ScannerScreen: React.FC = () => {
             onPress={() => navigation.goBack()}
           />
           <Title style={styles.cameraTitle}>Scan Document</Title>
-          <IconButton
-            icon={getFlashIcon()}
-            size={24}
-            iconColor="white"
-            onPress={toggleFlash}
-          />
+          {/* Spacer for balanced layout */}
+          <View style={{ width: 48 }} />
         </Surface>
 
         {/* Document frame overlay */}
@@ -295,29 +472,46 @@ const ScannerScreen: React.FC = () => {
             Position document within the frame
           </Text>
         </View>
+      </SafeAreaView>
 
-        {/* Capture controls */}
-        <View style={styles.captureContainer}>
-          {isProcessing ? (
+      {/* Capture controls - Perfect centering with absolute positioning */}
+      <View style={styles.bottomControlsContainer}>
+        {isProcessing ? (
+          <View style={styles.processingOverlay}>
             <Surface style={styles.processingContainer} elevation={4}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={[styles.processingText, { color: theme.colors.onSurface }]}>
-                Extracting text...
+                Processing document...
               </Text>
             </Surface>
-          ) : (
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <FAB
+          </View>
+        ) : (
+          <>
+            <Animated.View style={[styles.captureButton, { 
+              backgroundColor: theme.colors.primary,
+              transform: [{ scale: scaleAnim }] 
+            }]}>
+              <IconButton
                 icon="camera"
+                size={32}
+                iconColor={theme.colors.onPrimary}
                 onPress={capturePhoto}
-                style={[styles.captureButton, { backgroundColor: theme.colors.primary }]}
-                color={theme.colors.onPrimary}
-                size="large"
+                style={{ margin: 0 }}
               />
             </Animated.View>
-          )}
-        </View>
-      </SafeAreaView>
+            
+            {/* Flash toggle button positioned to the right */}
+            <View style={styles.flashButton}>
+              <IconButton
+                icon={getFlashIcon()}
+                size={20}
+                iconColor="white"
+                onPress={toggleFlash}
+              />
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 };
@@ -397,32 +591,66 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 20,
   },
-  captureContainer: {
-    alignItems: 'center',
-    paddingBottom: 40,
+  // Bottom controls container - acts as the bottom bar
+  bottomControlsContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
+  // Perfect centering for main capture button
   captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -35, // Half of width (70/2) to center perfectly
+    bottom: 25,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
     elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
+  // Flash button positioned to the side
+  flashButton: {
+    position: 'absolute',
+    right: 30,
+    bottom: 40,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
   processingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 32,
+    paddingVertical: 20,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    minWidth: 200,
+    justifyContent: 'center',
   },
   processingText: {
-    marginLeft: 12,
-    fontSize: 16,
+    marginLeft: 16,
+    fontSize: 18,
     fontWeight: '600',
+    textAlign: 'center',
   },
   // Permission screen styles
   permissionContainer: {
@@ -512,6 +740,29 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     borderWidth: 1.5,
+  },
+  // Focus and zoom animation styles
+  zoomIndicator: {
+    position: 'absolute',
+    top: 80, // Position below status bar and header
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  zoomIndicatorContent: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  zoomText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

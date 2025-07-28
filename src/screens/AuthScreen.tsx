@@ -282,11 +282,7 @@ const AuthScreen: React.FC = () => {
                 contentStyle={styles.authButtonContent}
                 labelStyle={styles.authButtonText}
               >
-                {loading ? (
-                  <ActivityIndicator color={theme.colors.onPrimary} />
-                ) : (
-                  isLogin ? 'Sign In' : 'Create Account'
-                )}
+                {isLogin ? 'Sign In' : 'Create Account'}
               </Button>
 
               <View style={styles.dividerContainer}>
