@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Alert, Platform } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { 
   Modal, 
   Portal, 

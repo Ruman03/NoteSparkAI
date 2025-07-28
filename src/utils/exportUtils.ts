@@ -1,4 +1,4 @@
-import { Platform, Alert } from 'react-native';
+import { Alert } from 'react-native';
 // @ts-ignore - No types available for this library
 import RNFS from 'react-native-fs';
 // @ts-ignore - No types available for this library
