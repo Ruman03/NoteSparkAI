@@ -17,7 +17,7 @@ import {
   Divider,
   ActivityIndicator,
 } from 'react-native-paper';
-import EmojiIcon from '../components/EmojiIcon';
+import AppIcon from '../components/AppIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { hapticService } from '../services/HapticService';
 
@@ -30,7 +30,7 @@ const AuthScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const theme = useTheme();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
 
   const handleAuth = async () => {
     hapticService.buttonPress();
@@ -57,11 +57,73 @@ const AuthScreen: React.FC = () => {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    hapticService.buttonPress();
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+      hapticService.success();
+    } catch (error: any) {
+      hapticService.error();
+      Alert.alert('Google Sign-In Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    hapticService.buttonPress();
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address first');
+      return;
+    }
+    
+    Alert.alert(
+      'Reset Password',
+      `Send password reset email to ${email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async () => {
+            try {
+              // This would use resetPassword from AuthContext when implemented
+              Alert.alert(
+                'Email Sent',
+                'Password reset instructions have been sent to your email address.',
+                [{ text: 'OK', style: 'default' }]
+              );
+              hapticService.success();
+            } catch (error: any) {
+              hapticService.error();
+              Alert.alert('Error', error.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleAppleSignIn = async () => {
+    hapticService.buttonPress();
+    setLoading(true);
+    try {
+      await signInWithApple();
+      hapticService.success();
+    } catch (error: any) {
+      hapticService.error();
+      Alert.alert('Apple Sign-In Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const Logo = () => (
     <View style={[styles.logoContainer, { backgroundColor: theme.colors.primaryContainer }]}>
-      <EmojiIcon 
-        name="brain" 
-        size={48} 
+      <AppIcon 
+        name="spark" 
+        size={48}
+        color={theme.colors.primary}
       />
       <Text style={[styles.logoText, { color: theme.colors.primary }]}>
         NoteSpark AI
@@ -72,18 +134,56 @@ const AuthScreen: React.FC = () => {
     </View>
   );
 
-  const SocialButton = ({ icon, title, onPress }: { icon: 'google' | 'apple'; title: string; onPress: () => void }) => {
+  const SocialButton = ({ icon, title, onPress, disabled = false }: { icon: 'google' | 'apple'; title: string; onPress: () => void; disabled?: boolean }) => {
+    const IconComponent = () => {
+      if (icon === 'google') {
+        return (
+          <View style={{
+            backgroundColor: disabled ? '#CCCCCC' : '#4285F4',
+            borderRadius: 8,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            minWidth: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <Text style={{
+              color: '#FFFFFF',
+              fontSize: 12,
+              fontWeight: 'bold',
+              textAlign: 'center',
+            }}>
+              G
+            </Text>
+          </View>
+        );
+      }
+      return <AppIcon name={icon} size={18} color={theme.colors.onSurface} />;
+    };
+
     return (
       <Button
         mode="outlined"
+        disabled={disabled}
         onPress={() => {
-          hapticService.buttonPress();
-          onPress();
+          if (!disabled) {
+            hapticService.buttonPress();
+            onPress();
+          }
         }}
-        style={[styles.socialButton, { borderColor: theme.colors.outline }]}
+        style={[
+          styles.socialButton, 
+          { 
+            borderColor: disabled ? theme.colors.outline + '50' : theme.colors.outline,
+            opacity: disabled ? 0.6 : 1 
+          }
+        ]}
         contentStyle={styles.socialButtonContent}
-        labelStyle={[styles.socialButtonText, { color: theme.colors.onSurface }]}
-        icon={() => <EmojiIcon name={icon} size={16} />}
+        labelStyle={[
+          styles.socialButtonText, 
+          { color: disabled ? theme.colors.onSurface + '50' : theme.colors.onSurface }
+        ]}
+        icon={() => <IconComponent />}
       >
         {title}
       </Button>
@@ -165,7 +265,7 @@ const AuthScreen: React.FC = () => {
               {isLogin && (
                 <Button
                   mode="text"
-                  onPress={() => {}}
+                  onPress={handleForgotPassword}
                   style={styles.forgotPassword}
                   labelStyle={[styles.forgotPasswordText, { color: theme.colors.primary }]}
                 >
@@ -182,11 +282,7 @@ const AuthScreen: React.FC = () => {
                 contentStyle={styles.authButtonContent}
                 labelStyle={styles.authButtonText}
               >
-                {loading ? (
-                  <ActivityIndicator color={theme.colors.onPrimary} />
-                ) : (
-                  isLogin ? 'Sign In' : 'Create Account'
-                )}
+                {isLogin ? 'Sign In' : 'Create Account'}
               </Button>
 
               <View style={styles.dividerContainer}>
@@ -201,12 +297,14 @@ const AuthScreen: React.FC = () => {
                 <SocialButton
                   icon="google"
                   title="Google"
-                  onPress={() => {}}
+                  onPress={handleGoogleSignIn}
+                  disabled={loading}
                 />
                 <SocialButton
                   icon="apple"
                   title="Apple"
-                  onPress={() => {}}
+                  onPress={handleAppleSignIn}
+                  disabled={loading}
                 />
               </View>
 

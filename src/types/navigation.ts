@@ -11,6 +11,7 @@ export type RootStackParamList = {
     noteText: string; 
     tone: 'professional' | 'casual' | 'simplified';
     originalText?: string;
+    noteTitle?: string;
   };
 };
 

@@ -7,7 +7,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Provider as PaperProvider, MD3LightTheme, MD3DarkTheme, adaptNavigationTheme, useTheme } from 'react-native-paper';
 import { DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { ActivityIndicator, View, useColorScheme } from 'react-native';
-import EmojiIcon from './src/components/EmojiIcon';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import AppIcon from './src/components/AppIcon';
 
 // Firebase Authentication
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -121,7 +122,7 @@ function MainTabs() {
               iconName = 'default';
           }
 
-          return <EmojiIcon name={iconName} size={size} />;
+          return <AppIcon name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
@@ -258,10 +259,12 @@ export default function App() {
   }, []);
 
   return (
-    <PaperProvider theme={paperTheme}>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </PaperProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider theme={paperTheme}>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -19,11 +19,11 @@ interface AITransformationResponse {
 }
 
 const TONE_PROMPTS: TonePrompts = {
-  professional: `Transform the following raw text into well-structured, professional study notes. Format the output as clean HTML with proper headings, bullet points, and emphasis where appropriate. Focus on clarity, organization, and academic tone. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags as needed. Make sure the content is comprehensive and well-organized for studying.`,
+  professional: `Transform the following raw text into well-structured, professional study notes. Format the output as clean HTML with proper headings, bullet points, and emphasis where appropriate. Focus on clarity, organization, and academic tone. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags as needed. Make sure the content is comprehensive and well-organized for studying. IMPORTANT: Return only the HTML content without any markdown code blocks or backticks.`,
   
-  casual: `Transform the following raw text into friendly, easy-to-read study notes. Use a conversational tone that makes the content approachable and engaging. Format as HTML with headings, bullet points, and emphasis. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags. Make it feel like notes from a study buddy who explains things clearly and simply.`,
+  casual: `Transform the following raw text into friendly, easy-to-read study notes. Use a conversational tone that makes the content approachable and engaging. Format as HTML with headings, bullet points, and emphasis. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags. Make it feel like notes from a study buddy who explains things clearly and simply. IMPORTANT: Return only the HTML content without any markdown code blocks or backticks.`,
   
-  simplified: `Transform the following raw text into simple, concise study notes that are easy to understand. Break down complex concepts into digestible pieces. Use clear, straightforward language and format as HTML with basic structure. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags. Focus on the most important points and make everything crystal clear.`
+  simplified: `Transform the following raw text into simple, concise study notes that are easy to understand. Break down complex concepts into digestible pieces. Use clear, straightforward language and format as HTML with basic structure. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags. Focus on the most important points and make everything crystal clear. IMPORTANT: Return only the HTML content without any markdown code blocks or backticks.`
 };
 
 class AIService {
@@ -119,11 +119,14 @@ class AIService {
       }
 
       const data = await response.json();
-      const transformedText = data.choices?.[0]?.message?.content || '';
+      let transformedText = data.choices?.[0]?.message?.content || '';
 
       if (!transformedText) {
         throw new Error('No content received from OpenAI API');
       }
+
+      // Clean up the response - remove markdown code blocks if present
+      transformedText = this.cleanupAIResponse(transformedText);
 
       // Generate a title for the note
       const title = await this.generateNoteTitle(transformedText);
@@ -205,6 +208,24 @@ class AIService {
     // Generate timestamp-based title as last resort
     const date = new Date().toLocaleDateString();
     return `Study Notes - ${date}`;
+  }
+
+  private cleanupAIResponse(response: string): string {
+    // Remove markdown code blocks (```html, ```text, etc.)
+    let cleaned = response.replace(/^```\w*\n?/gm, '').replace(/\n?```$/gm, '');
+    
+    // Remove any leading/trailing whitespace
+    cleaned = cleaned.trim();
+    
+    // Remove any HTML comments that might have been added
+    cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
+    
+    // Log the cleanup for debugging
+    if (response !== cleaned) {
+      console.log('AIService: Cleaned up AI response - removed markdown code blocks');
+    }
+    
+    return cleaned;
   }
 
   private countWords(text: string): number {

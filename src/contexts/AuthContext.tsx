@@ -7,6 +7,8 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfile: (updates: { displayName?: string; photoURL?: string }) => Promise<void>;
@@ -49,6 +51,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signUp = async (email: string, password: string) => {
     try {
       await authService.createUserWithEmailAndPassword(email, password);
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      await authService.signInWithGoogle();
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const signInWithApple = async () => {
+    try {
+      await authService.signInWithApple();
     } catch (error: any) {
       throw error;
     }
@@ -115,6 +133,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loading,
     signIn,
     signUp,
+    signInWithGoogle,
+    signInWithApple,
     signOut,
     resetPassword,
     updateProfile,
