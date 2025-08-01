@@ -56,6 +56,9 @@ export default function EditorScreen() {
   // Track active formatting styles for toolbar state
   const [activeStyles, setActiveStyles] = useState<string[]>([]);
   
+  // Track editor initialization state
+  const [isEditorReady, setIsEditorReady] = useState(false);
+  
   // Advanced editor states
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -140,20 +143,24 @@ export default function EditorScreen() {
     }
   }, []);
 
-  const setTextAlignment = useCallback((alignment: 'left' | 'center' | 'right' | 'justify') => {
+  const setTextAlignment = useCallback(async (alignment: 'left' | 'center' | 'right' | 'justify') => {
     if (richText.current) {
+      console.log(`${alignment} alignment button pressed - advanced approach`);
+      richText.current.focusContentEditor();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
       switch (alignment) {
         case 'left':
-          richText.current.sendAction(actions.alignLeft, 'action');
+          richText.current.sendAction(actions.alignLeft, 'result');
           break;
         case 'center':
-          richText.current.sendAction(actions.alignCenter, 'action');
+          richText.current.sendAction(actions.alignCenter, 'result');
           break;
         case 'right':
-          richText.current.sendAction(actions.alignRight, 'action');
+          richText.current.sendAction(actions.alignRight, 'result');
           break;
         case 'justify':
-          richText.current.sendAction(actions.alignFull, 'action');
+          richText.current.sendAction(actions.alignFull, 'result');
           break;
       }
     }
@@ -549,6 +556,10 @@ export default function EditorScreen() {
               style={styles.editor}
               initialContentHTML={initialContent}
               placeholder="Start writing your amazing notes..."
+              editorInitializedCallback={() => {
+                console.log('Editor fully initialized and ready!');
+                setIsEditorReady(true);
+              }}
               editorStyle={{
                 backgroundColor: theme.colors.surface,
                 color: theme.colors.onSurface,
@@ -586,14 +597,30 @@ export default function EditorScreen() {
               icon="undo"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.undo, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Undo button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.undo, 'result');
+                }
+              }}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="redo"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.redo, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Redo button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.redo, 'result');
+                }
+              }}
               style={styles.toolbarButton}
             />
           </View>
@@ -624,7 +651,18 @@ export default function EditorScreen() {
               icon="format-bold"
               size={20}
               iconColor={activeStyles.includes('bold') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.setBold, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Bold button pressed - advanced approach');
+                if (richText.current) {
+                  // Focus the editor and ensure it's ready
+                  richText.current.focusContentEditor();
+                  // Small delay to ensure focus is complete
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  // Send the action
+                  richText.current.sendAction(actions.setBold, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('bold') ? theme.colors.primaryContainer : 'transparent' }
@@ -634,7 +672,15 @@ export default function EditorScreen() {
               icon="format-italic"
               size={20}
               iconColor={activeStyles.includes('italic') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.setItalic, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Italic button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.setItalic, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('italic') ? theme.colors.primaryContainer : 'transparent' }
@@ -644,7 +690,15 @@ export default function EditorScreen() {
               icon="format-underline"
               size={20}
               iconColor={activeStyles.includes('underline') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.setUnderline, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Underline button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.setUnderline, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('underline') ? theme.colors.primaryContainer : 'transparent' }
@@ -654,7 +708,15 @@ export default function EditorScreen() {
               icon="format-strikethrough"
               size={20}
               iconColor={activeStyles.includes('strikeThrough') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.setStrikethrough, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Strikethrough button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.setStrikethrough, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('strikeThrough') ? theme.colors.primaryContainer : 'transparent' }
@@ -698,6 +760,7 @@ export default function EditorScreen() {
               icon="format-align-left"
               size={20}
               iconColor={activeStyles.includes('alignLeft') ? theme.colors.primary : theme.colors.onSurface}
+              disabled={!isEditorReady}
               onPress={() => setTextAlignment('left')}
               style={[
                 styles.toolbarButton,
@@ -708,6 +771,7 @@ export default function EditorScreen() {
               icon="format-align-center"
               size={20}
               iconColor={activeStyles.includes('alignCenter') ? theme.colors.primary : theme.colors.onSurface}
+              disabled={!isEditorReady}
               onPress={() => setTextAlignment('center')}
               style={[
                 styles.toolbarButton,
@@ -718,6 +782,7 @@ export default function EditorScreen() {
               icon="format-align-right"
               size={20}
               iconColor={activeStyles.includes('alignRight') ? theme.colors.primary : theme.colors.onSurface}
+              disabled={!isEditorReady}
               onPress={() => setTextAlignment('right')}
               style={[
                 styles.toolbarButton,
@@ -728,6 +793,7 @@ export default function EditorScreen() {
               icon="format-align-justify"
               size={20}
               iconColor={activeStyles.includes('alignFull') ? theme.colors.primary : theme.colors.onSurface}
+              disabled={!isEditorReady}
               onPress={() => setTextAlignment('justify')}
               style={[
                 styles.toolbarButton,
@@ -744,7 +810,15 @@ export default function EditorScreen() {
               icon="format-header-1"
               size={20}
               iconColor={activeStyles.includes('heading1') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.heading1, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('H1 button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.heading1, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('heading1') ? theme.colors.primaryContainer : 'transparent' }
@@ -754,7 +828,15 @@ export default function EditorScreen() {
               icon="format-header-2"
               size={20}
               iconColor={activeStyles.includes('heading2') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.heading2, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('H2 button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.heading2, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('heading2') ? theme.colors.primaryContainer : 'transparent' }
@@ -764,7 +846,15 @@ export default function EditorScreen() {
               icon="format-header-3"
               size={20}
               iconColor={activeStyles.includes('heading3') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.heading3, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('H3 button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.heading3, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('heading3') ? theme.colors.primaryContainer : 'transparent' }
@@ -779,7 +869,15 @@ export default function EditorScreen() {
               icon="format-list-bulleted"
               size={20}
               iconColor={activeStyles.includes('unorderedList') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.insertBulletsList, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Bullet list button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.insertBulletsList, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('unorderedList') ? theme.colors.primaryContainer : 'transparent' }
@@ -789,7 +887,15 @@ export default function EditorScreen() {
               icon="format-list-numbered"
               size={20}
               iconColor={activeStyles.includes('orderedList') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.insertOrderedList, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Numbered list button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.insertOrderedList, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('orderedList') ? theme.colors.primaryContainer : 'transparent' }
@@ -799,14 +905,30 @@ export default function EditorScreen() {
               icon="format-indent-increase"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.indent, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Indent button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.indent, 'result');
+                }
+              }}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-indent-decrease"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.outdent, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Outdent button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.outdent, 'result');
+                }
+              }}
               style={styles.toolbarButton}
             />
           </View>
@@ -839,7 +961,15 @@ export default function EditorScreen() {
               icon="format-quote-close"
               size={20}
               iconColor={activeStyles.includes('quote') ? theme.colors.primary : theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction(actions.blockquote, 'action')}
+              disabled={!isEditorReady}
+              onPress={async () => {
+                console.log('Blockquote button pressed - advanced approach');
+                if (richText.current) {
+                  richText.current.focusContentEditor();
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  richText.current.sendAction(actions.blockquote, 'result');
+                }
+              }}
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('quote') ? theme.colors.primaryContainer : 'transparent' }
