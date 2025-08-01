@@ -84,17 +84,24 @@ export default function EditorScreen() {
 
   const insertLink = useCallback(() => {
     if (richText.current && linkUrl && linkText) {
-      const linkHtml = `<a href="${linkUrl}" style="color: #007bff; text-decoration: underline;">${linkText}</a>`;
-      richText.current.insertHTML(linkHtml);
-      setShowLinkModal(false);
-      setLinkUrl('');
-      setLinkText('');
+      // Add URL validation
+      const urlPattern = new RegExp('^(https?|ftp)://[^\\s/$.?#].[^\\s]*$');
+      if (urlPattern.test(linkUrl)) {
+        const linkHtml = `<a href="${linkUrl}" style="color: #007bff; text-decoration: underline;">${linkText}</a>`;
+        richText.current.insertHTML(linkHtml);
+        setShowLinkModal(false);
+        setLinkUrl('');
+        setLinkText('');
+      } else {
+        // Alert the user if the URL is invalid
+        Alert.alert("Invalid URL", "Please enter a valid URL starting with http://, https://, or ftp://");
+      }
     }
   }, [linkUrl, linkText]);
 
   const setFontSize = useCallback((size: number) => {
     if (richText.current) {
-      richText.current.sendAction('fontSize', 'action', size);
+      richText.current.sendAction(actions.fontSize, 'action', size);
       setSelectedFontSize(size);
       setShowFontMenu(false);
     }
@@ -102,14 +109,14 @@ export default function EditorScreen() {
 
   const setTextColor = useCallback((color: string) => {
     if (richText.current) {
-      richText.current.sendAction('foreColor', 'action', color);
+      richText.current.sendAction(actions.foreColor, 'action', color);
       setShowColorPicker(false);
     }
   }, []);
 
   const setHighlightColor = useCallback((color: string) => {
     if (richText.current) {
-      richText.current.sendAction('hiliteColor', 'action', color);
+      richText.current.sendAction(actions.hiliteColor, 'action', color);
       setShowColorPicker(false);
     }
   }, []);
@@ -124,16 +131,16 @@ export default function EditorScreen() {
     if (richText.current) {
       switch (alignment) {
         case 'left':
-          richText.current.sendAction('justifyLeft', 'action');
+          richText.current.sendAction(actions.alignLeft, 'action');
           break;
         case 'center':
-          richText.current.sendAction('justifyCenter', 'action');
+          richText.current.sendAction(actions.alignCenter, 'action');
           break;
         case 'right':
-          richText.current.sendAction('justifyRight', 'action');
+          richText.current.sendAction(actions.alignRight, 'action');
           break;
         case 'justify':
-          richText.current.sendAction('justifyFull', 'action');
+          richText.current.sendAction(actions.alignFull, 'action');
           break;
       }
     }
@@ -290,21 +297,7 @@ export default function EditorScreen() {
     }, 2000); // 2 second debounce - more reasonable than 3 second intervals
   }, [autoSave]);
 
-  // Set up auto-save interval - only when screen is focused
-  useEffect(() => {
-    if (!isScreenFocused) return;
 
-    console.log('EditorScreen: Setting up auto-save interval');
-    const interval = setInterval(() => {
-      console.log('EditorScreen: Auto-save interval trigger');
-      autoSave();
-    }, 5000); // Increased to 5 seconds to reduce API calls
-    
-    return () => {
-      console.log('EditorScreen: Cleaning up auto-save interval');
-      clearInterval(interval);
-    };
-  }, [isScreenFocused, autoSave]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -364,7 +357,7 @@ export default function EditorScreen() {
     };
 
     processNote();
-  }, [noteText, routeNoteId, noteTitle]);
+  }, [noteText, routeNoteId]);
 
   const handleSave = async () => {
     if (!richText.current) return;
@@ -561,14 +554,14 @@ export default function EditorScreen() {
               icon="undo"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('undo', 'action')}
+              onPress={() => richText.current?.sendAction(actions.undo, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="redo"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('redo', 'action')}
+              onPress={() => richText.current?.sendAction(actions.redo, 'action')}
               style={styles.toolbarButton}
             />
           </View>
@@ -599,28 +592,28 @@ export default function EditorScreen() {
               icon="format-bold"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('bold', 'action')}
+              onPress={() => richText.current?.sendAction(actions.setBold, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-italic"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('italic', 'action')}
+              onPress={() => richText.current?.sendAction(actions.setItalic, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-underline"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('underline', 'action')}
+              onPress={() => richText.current?.sendAction(actions.setUnderline, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-strikethrough"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('strikeThrough', 'action')}
+              onPress={() => richText.current?.sendAction(actions.setStrikethrough, 'action')}
               style={styles.toolbarButton}
             />
           </View>
@@ -695,21 +688,21 @@ export default function EditorScreen() {
               icon="format-header-1"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('heading1', 'action')}
+              onPress={() => richText.current?.sendAction(actions.heading1, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-header-2"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('heading2', 'action')}
+              onPress={() => richText.current?.sendAction(actions.heading2, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-header-3"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('heading3', 'action')}
+              onPress={() => richText.current?.sendAction(actions.heading3, 'action')}
               style={styles.toolbarButton}
             />
           </View>
@@ -721,28 +714,28 @@ export default function EditorScreen() {
               icon="format-list-bulleted"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('insertBulletsList', 'action')}
+              onPress={() => richText.current?.sendAction(actions.insertBulletsList, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-list-numbered"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('insertOrderedList', 'action')}
+              onPress={() => richText.current?.sendAction(actions.insertOrderedList, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-indent-increase"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('indent', 'action')}
+              onPress={() => richText.current?.sendAction(actions.indent, 'action')}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="format-indent-decrease"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('outdent', 'action')}
+              onPress={() => richText.current?.sendAction(actions.outdent, 'action')}
               style={styles.toolbarButton}
             />
           </View>
@@ -775,7 +768,7 @@ export default function EditorScreen() {
               icon="format-quote-close"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => richText.current?.sendAction('blockquote', 'action')}
+              onPress={() => richText.current?.sendAction(actions.blockquote, 'action')}
               style={styles.toolbarButton}
             />
           </View>
