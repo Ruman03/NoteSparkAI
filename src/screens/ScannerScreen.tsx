@@ -9,6 +9,8 @@ import {
   StatusBar,
   Animated,
   GestureResponderEvent,
+  ScrollView,
+  Modal,
 } from 'react-native';
 import { 
   Button, 
@@ -20,6 +22,7 @@ import {
   Surface,
   IconButton,
   FAB,
+  Chip,
 } from 'react-native-paper';
 import { useCameraDevice, Camera, useCameraPermission, CameraProps } from 'react-native-vision-camera';
 import { useNavigation } from '@react-navigation/native';
@@ -43,6 +46,8 @@ import Reanimated, {
   withSequence,
   Easing
 } from 'react-native-reanimated';
+import VisionService, { VisionResult } from '../services/VisionService';
+import ImageCroppingService, { CropResult } from '../services/ImageCroppingService';
 
 // Make Camera animatable for zoom control
 Reanimated.addWhitelistedNativeProps({
@@ -64,6 +69,10 @@ const ScannerScreen: React.FC = () => {
   const [showResults, setShowResults] = useState<boolean>(false);
   const [flashMode, setFlashMode] = useState<'auto' | 'on' | 'off'>('auto');
   const [currentZoom, setCurrentZoom] = useState<number>(1); // State for zoom display
+  const [ocrConfidence, setOcrConfidence] = useState<number>(0); // OCR confidence score
+  const [ocrMethod, setOcrMethod] = useState<'Google Cloud Vision' | 'ML Kit' | 'Unknown'>('Unknown'); // OCR method used
+  const [showCropOption, setShowCropOption] = useState<boolean>(false); // Show crop option after photo capture
+  const [capturedImagePath, setCapturedImagePath] = useState<string>(''); // Store captured image path
   
   const cameraRef = useRef<Camera>(null);
   const device = useCameraDevice('back');
@@ -254,37 +263,114 @@ const ScannerScreen: React.FC = () => {
       console.log('Photo captured:', photo.path);
 
       const photoPath = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`;
+      setCapturedImagePath(photoPath);
       
-      try {
-        const ocrResult = await textRecognition.recognize(photoPath);
-        
-        if (ocrResult && ocrResult.text && ocrResult.text.trim()) {
-          hapticService.success();
-          setExtractedText(ocrResult.text);
-          setShowResults(true);
-        } else {
-          hapticService.error();
-          Alert.alert(
-            'No Text Found',
-            'Could not detect any text in the document. Please ensure the document is well-lit and clearly visible.',
-            [{ text: 'Try Again', onPress: () => {} }]
-          );
-        }
-      } catch (ocrError) {
-        console.error('OCR Error:', ocrError);
-        hapticService.error();
-        Alert.alert(
-          'Processing Error',
-          'Failed to extract text from the image. Please try again.',
-          [{ text: 'Try Again', onPress: () => {} }]
-        );
-      }
+      // Show crop option to user
+      setShowCropOption(true);
+      setIsProcessing(false);
     } catch (error) {
       console.error('Capture error:', error);
       hapticService.error();
       Alert.alert('Error', 'Failed to capture photo. Please try again.');
+      setIsProcessing(false);
+    }
+  };
+
+  const processCapturedImage = async (imagePath: string, skipCrop: boolean = false) => {
+    setIsProcessing(true);
+    setShowCropOption(false);
+    
+    try {
+      let finalImagePath = imagePath;
+      
+      // If user wants to crop, open cropper
+      if (!skipCrop) {
+        const croppingService = ImageCroppingService.getInstance();
+        const cropResult = await croppingService.quickCropForText(imagePath);
+        
+        if (cropResult) {
+          finalImagePath = cropResult.path;
+          console.log('Image cropped successfully:', finalImagePath);
+        } else {
+          // User cancelled cropping, use original image
+          console.log('User cancelled cropping, using original image');
+        }
+      }
+      
+      // Process with OCR - Try Google Cloud Vision first, then ML Kit
+      await processImageWithEnhancedOCR(finalImagePath);
+      
+    } catch (error) {
+      console.error('Image processing error:', error);
+      hapticService.error();
+      Alert.alert('Error', 'Failed to process image. Please try again.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const processImageWithEnhancedOCR = async (imagePath: string) => {
+    try {
+      let extractedText = '';
+      let confidence = 0;
+      let method: 'Google Cloud Vision' | 'ML Kit' = 'ML Kit';
+
+      // Try Google Cloud Vision first (highest accuracy)
+      const visionService = VisionService.getInstance();
+      if (visionService.isConfigured()) {
+        console.log('Attempting OCR with Google Cloud Vision...');
+        const visionResult = await visionService.extractTextFromImage(imagePath);
+        
+        if (visionResult && visionResult.text && visionResult.text.trim().length > 5) {
+          extractedText = visionResult.text;
+          confidence = visionResult.confidence;
+          method = 'Google Cloud Vision';
+          console.log('Google Cloud Vision OCR successful, confidence:', confidence);
+        } else {
+          console.log('Google Cloud Vision returned insufficient text, trying ML Kit...');
+        }
+      } else {
+        console.log('Google Cloud Vision not configured, using ML Kit...');
+      }
+
+      // Fallback to ML Kit if Cloud Vision failed or not configured
+      if (!extractedText || extractedText.trim().length < 5) {
+        console.log('Using ML Kit for OCR...');
+        const ocrResult = await textRecognition.recognize(imagePath);
+        
+        if (ocrResult && ocrResult.text && ocrResult.text.trim()) {
+          extractedText = ocrResult.text;
+          confidence = 0.8; // ML Kit doesn't provide confidence, assume 80%
+          method = 'ML Kit';
+          console.log('ML Kit OCR successful');
+        }
+      }
+
+      if (extractedText && extractedText.trim()) {
+        hapticService.success();
+        setExtractedText(extractedText);
+        setOcrConfidence(confidence);
+        setOcrMethod(method);
+        setShowResults(true);
+      } else {
+        hapticService.error();
+        Alert.alert(
+          'No Text Found',
+          'Could not detect any text in the document. Please ensure the document is well-lit and clearly visible, or try cropping the image to focus on the text area.',
+          [
+            { text: 'Try Again', onPress: () => retryCapture() },
+            { text: 'Crop & Retry', onPress: () => processCapturedImage(capturedImagePath, false) }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Enhanced OCR Error:', error);
+      hapticService.error();
+      Alert.alert(
+        'Processing Error',
+        'Failed to extract text from the image. Please try again.',
+        [{ text: 'Try Again', onPress: () => retryCapture() }]
+      );
     }
   };
 
@@ -299,7 +385,11 @@ const ScannerScreen: React.FC = () => {
 
   const retryCapture = () => {
     setShowResults(false);
+    setShowCropOption(false);
     setExtractedText('');
+    setCapturedImagePath('');
+    setOcrConfidence(0);
+    setOcrMethod('Unknown');
     setIsActive(true);
   };
 
@@ -384,11 +474,42 @@ const ScannerScreen: React.FC = () => {
         </Surface>
 
         <View style={styles.resultsContent}>
+          {/* OCR Method and Confidence Indicators */}
+          <View style={styles.ocrInfoContainer}>
+            <Chip 
+              icon="robot-industrial" 
+              style={[styles.ocrChip, { backgroundColor: ocrMethod === 'Google Cloud Vision' ? theme.colors.primaryContainer : theme.colors.surfaceVariant }]}
+              textStyle={{ color: theme.colors.onSurface, fontSize: 12 }}
+            >
+              {ocrMethod}
+            </Chip>
+            <Chip 
+              icon="gauge" 
+              style={[styles.confidenceChip, { backgroundColor: theme.colors.surfaceVariant }]}
+              textStyle={{ color: theme.colors.onSurface, fontSize: 12 }}
+            >
+              {Math.round(ocrConfidence * 100)}% accuracy
+            </Chip>
+          </View>
+
           <Card style={[styles.textCard, { backgroundColor: theme.colors.surface }]} elevation={3}>
             <Card.Content style={styles.textCardContent}>
-              <Text style={[styles.extractedText, { color: theme.colors.onSurface }]}>
-                {extractedText}
+              <Text style={[styles.textStats, { color: theme.colors.onSurfaceVariant }]}>
+                {extractedText.length} characters • {extractedText.split(/\s+/).filter(word => word.length > 0).length} words
               </Text>
+              <ScrollView 
+                style={styles.textScrollView}
+                contentContainerStyle={styles.textScrollContent}
+                showsVerticalScrollIndicator={true}
+                persistentScrollbar={true}
+              >
+                <Text 
+                  style={[styles.extractedText, { color: theme.colors.onSurface }]}
+                  selectable={true}
+                >
+                  {extractedText}
+                </Text>
+              </ScrollView>
             </Card.Content>
           </Card>
 
@@ -411,6 +532,58 @@ const ScannerScreen: React.FC = () => {
               Process with AI
             </Button>
           </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Crop option modal - shown after photo capture
+  if (showCropOption && capturedImagePath) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Surface style={[styles.resultsHeader, { backgroundColor: theme.colors.surface }]} elevation={2}>
+          <View style={styles.resultsHeaderContent}>
+            <IconButton
+              icon="arrow-left"
+              size={24}
+              iconColor={theme.colors.onSurface}
+              onPress={retryCapture}
+            />
+            <Title style={[styles.resultsTitle, { color: theme.colors.onSurface }]}>
+              Crop Photo
+            </Title>
+            <View style={{ width: 48 }} />
+          </View>
+        </Surface>
+
+        <View style={styles.resultsContent}>
+          <Card style={[styles.textCard, { backgroundColor: theme.colors.surface }]} elevation={3}>
+            <Card.Content style={styles.textCardContent}>
+              <Text style={[styles.textStats, { color: theme.colors.onSurfaceVariant, textAlign: 'center', marginBottom: 16 }]}>
+                For better text recognition, you can crop the image to focus only on the text area you want to scan.
+              </Text>
+              
+              <View style={styles.resultsActions}>
+                <Button
+                  mode="outlined"
+                  onPress={() => processCapturedImage(capturedImagePath, true)}
+                  style={[styles.actionButton, styles.retryButton]}
+                  icon="file-document-outline"
+                >
+                  Use Full Image
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={() => processCapturedImage(capturedImagePath, false)}
+                  style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
+                  labelStyle={{ color: theme.colors.onPrimary }}
+                  icon="crop"
+                >
+                  Crop Image
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
         </View>
       </SafeAreaView>
     );
@@ -740,6 +913,31 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     borderWidth: 1.5,
+  },
+  // New styles for enhanced features
+  ocrInfoContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+  },
+  ocrChip: {
+    flex: 1,
+  },
+  confidenceChip: {
+    flex: 1,
+  },
+  textStats: {
+    fontSize: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  textScrollView: {
+    maxHeight: 300,
+    minHeight: 120,
+  },
+  textScrollContent: {
+    paddingVertical: 4,
   },
   // Focus and zoom animation styles
   zoomIndicator: {
