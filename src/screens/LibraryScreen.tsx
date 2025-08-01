@@ -205,41 +205,46 @@ export default function LibraryScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <LibraryHeader
-        searchQuery={searchQuery}
-        onSearch={setSearchQuery}
-        selectedTone={selectedTone}
-        onToneFilter={setSelectedTone}
-        viewMode={viewMode}
-        onViewModeChange={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        onRefresh={handleRefresh}
-      />
-      
-      {renderContent()}
-      
-      <FAB
-        icon="camera-plus"
-        onPress={handleScanNew}
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-        color={theme.colors.onPrimary}
-      />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.surface }]} edges={['top']}>
+      <View style={[styles.content, { backgroundColor: theme.colors.background }]}>
+        <LibraryHeader
+          searchQuery={searchQuery}
+          onSearch={setSearchQuery}
+          selectedTone={selectedTone}
+          onToneFilter={setSelectedTone}
+          viewMode={viewMode}
+          onViewModeChange={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          onRefresh={handleRefresh}
+        />
+        
+        {renderContent()}
+        
+        <FAB
+          icon="camera-plus"
+          onPress={handleScanNew}
+          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+          color={theme.colors.onPrimary}
+        />
 
-      <NoteActionsModal
-        visible={showActionsModal}
-        note={selectedNote}
-        onDismiss={() => setShowActionsModal(false)}
-        onEditNote={handleEditNote}
-        onNoteDeleted={handleNoteDeleted}
-      />
+        <NoteActionsModal
+          visible={showActionsModal}
+          note={selectedNote}
+          onDismiss={() => setShowActionsModal(false)}
+          onEditNote={handleEditNote}
+          onNoteDeleted={handleNoteDeleted}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  content: {
     flex: 1,
   },
   notesList: {

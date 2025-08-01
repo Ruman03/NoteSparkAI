@@ -85,8 +85,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
               textStyle={{ 
                 color: getToneColor(note.tone, theme), 
                 fontSize: isGridView ? 12 : 12, 
-                fontWeight: '600',
-                minWidth: isGridView ? 70 : 80
+                fontWeight: '600'
               }}
               compact={!isGridView}
             >
@@ -176,14 +175,11 @@ const styles = StyleSheet.create({
     toneChip: {
         height: 32,
         borderRadius: 16,
-        minWidth: 80,
         justifyContent: 'center',
     },
     gridToneChip: {
         height: 32,
         borderRadius: 16,
-        minWidth: 85,
-        maxWidth: 120,
         marginBottom: 6,
         paddingHorizontal: 8,
     },
