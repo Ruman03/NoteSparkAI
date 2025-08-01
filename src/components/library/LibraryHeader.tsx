@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Surface, Text, Searchbar, Chip, IconButton, Menu, useTheme } from 'react-native-paper';
 
 interface LibraryHeaderProps {
@@ -62,14 +62,46 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
                 <IconButton
                   icon="sort"
                   size={24}
-                  iconColor={theme.colors.onSurface}
-                  onPress={() => setMenuVisible(true)}
+                  iconColor={menuVisible ? theme.colors.primary : theme.colors.onSurface}
+                  style={[
+                    styles.sortButton,
+                    menuVisible && { 
+                      backgroundColor: theme.colors.primaryContainer + '40',
+                      transform: [{ scale: 0.95 }]
+                    }
+                  ]}
+                  onPress={() => setMenuVisible(!menuVisible)}
                 />
               }
+              contentStyle={styles.sortMenu}
             >
-              <Menu.Item onPress={() => onSortChange('date')} title="Sort by Date" />
-              <Menu.Item onPress={() => onSortChange('title')} title="Sort by Title" />
-              <Menu.Item onPress={() => onSortChange('tone')} title="Sort by Tone" />
+              <Menu.Item 
+                onPress={() => { 
+                  onSortChange('date'); 
+                  setMenuVisible(false); 
+                }} 
+                title="Sort by Date" 
+                leadingIcon="calendar"
+                titleStyle={sortBy === 'date' ? { color: theme.colors.primary, fontWeight: '600' } : {}}
+              />
+              <Menu.Item 
+                onPress={() => { 
+                  onSortChange('title'); 
+                  setMenuVisible(false); 
+                }} 
+                title="Sort by Title" 
+                leadingIcon="format-title"
+                titleStyle={sortBy === 'title' ? { color: theme.colors.primary, fontWeight: '600' } : {}}
+              />
+              <Menu.Item 
+                onPress={() => { 
+                  onSortChange('tone'); 
+                  setMenuVisible(false); 
+                }} 
+                title="Sort by Tone" 
+                leadingIcon="palette"
+                titleStyle={sortBy === 'tone' ? { color: theme.colors.primary, fontWeight: '600' } : {}}
+              />
             </Menu>
           </View>
         </View>
@@ -83,7 +115,12 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
           iconColor={theme.colors.onSurfaceVariant}
         />
         
-        <View style={styles.filters}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.filtersContainer}
+          contentContainerStyle={styles.filters}
+        >
           {toneFilters.map(filter => (
             <Chip
               key={filter.label}
@@ -91,19 +128,24 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
               onPress={() => onToneFilter(filter.value)}
               style={[
                 styles.filterChip,
-                selectedTone === filter.value && { backgroundColor: theme.colors.primaryContainer }
+                selectedTone === filter.value && { 
+                  backgroundColor: theme.colors.primaryContainer,
+                  borderColor: theme.colors.primary,
+                  borderWidth: 1,
+                }
               ]}
               textStyle={{ 
-                fontSize: 12, 
+                fontSize: 13, 
+                fontWeight: selectedTone === filter.value ? '600' : '500',
                 color: selectedTone === filter.value ? theme.colors.onPrimaryContainer : theme.colors.onSurfaceVariant 
               }}
               icon={filter.icon}
-              compact
+              compact={false}
             >
               {filter.label}
             </Chip>
           ))}
-        </View>
+        </ScrollView>
       </View>
     </Surface>
   );
@@ -129,18 +171,35 @@ const styles = StyleSheet.create({
     headerActions: {
         flexDirection: 'row',
     },
+    sortButton: {
+        borderRadius: 12,
+        margin: 0,
+        backgroundColor: 'transparent',
+    },
+    sortMenu: {
+        borderRadius: 12,
+        marginTop: 8,
+    },
     searchbar: {
         elevation: 0,
         marginBottom: 16,
         borderRadius: 12,
     },
+    filtersContainer: {
+        marginHorizontal: -16,
+        paddingHorizontal: 16,
+    },
     filters: {
         flexDirection: 'row',
-        gap: 8,
+        gap: 10,
+        paddingRight: 16,
     },
     filterChip: {
-        height: 36,
-        borderRadius: 18,
+        height: 40,
+        borderRadius: 20,
+        minWidth: 90,
+        justifyContent: 'center',
+        elevation: 1,
     },
 });
 

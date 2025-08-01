@@ -77,9 +77,18 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
           <View style={[styles.noteFooter, isGridView && styles.gridNoteFooter]}>
             <Chip
               icon={getToneIcon(note.tone)}
-              style={[styles.toneChip, { backgroundColor: getToneColor(note.tone, theme) + '15' }]}
-              textStyle={{ color: getToneColor(note.tone, theme), fontSize: isGridView ? 10 : 12, fontWeight: '600' }}
-              compact
+              style={[
+                styles.toneChip, 
+                isGridView && styles.gridToneChip,
+                { backgroundColor: getToneColor(note.tone, theme) + '15' }
+              ]}
+              textStyle={{ 
+                color: getToneColor(note.tone, theme), 
+                fontSize: isGridView ? 12 : 12, 
+                fontWeight: '600',
+                minWidth: isGridView ? 70 : 80
+              }}
+              compact={!isGridView}
             >
               {note.tone || 'unknown'}
             </Chip>
@@ -88,6 +97,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
               <Text 
                 variant="labelSmall" 
                 style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
+                numberOfLines={1}
               >
                 {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
               </Text>
@@ -164,8 +174,18 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     toneChip: {
-        height: 28,
-        borderRadius: 14,
+        height: 32,
+        borderRadius: 16,
+        minWidth: 80,
+        justifyContent: 'center',
+    },
+    gridToneChip: {
+        height: 32,
+        borderRadius: 16,
+        minWidth: 85,
+        maxWidth: 120,
+        marginBottom: 6,
+        paddingHorizontal: 8,
     },
     tagsContainer: {
         flexDirection: 'row',
@@ -184,20 +204,24 @@ const styles = StyleSheet.create({
         marginHorizontal: 6,
     },
     gridNoteContent: {
-        paddingBottom: 12,
+        paddingBottom: 14,
+        paddingHorizontal: 14,
     },
     gridNoteHeader: {
         marginBottom: 8,
     },
     gridNoteFooter: {
-        marginTop: 8,
+        marginTop: 14,
         flexDirection: 'column',
         alignItems: 'flex-start',
+        gap: 8,
+        width: '100%',
     },
     gridNoteDate: {
-        marginTop: 4,
-        fontSize: 10,
+        marginTop: 0,
+        fontSize: 11,
         opacity: 0.7,
+        lineHeight: 14,
     },
 });
 
