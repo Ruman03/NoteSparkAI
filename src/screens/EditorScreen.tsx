@@ -53,6 +53,9 @@ export default function EditorScreen() {
   const [lastContent, setLastContent] = useState('');
   const [isScreenFocused, setIsScreenFocused] = useState(true);
   
+  // Track active formatting styles for toolbar state
+  const [activeStyles, setActiveStyles] = useState<string[]>([]);
+  
   // Advanced editor states
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -156,6 +159,25 @@ export default function EditorScreen() {
       };
     }, [])
   );
+
+  // Register toolbar listener to get formatting state updates
+  useEffect(() => {
+    if (richText.current) {
+      richText.current.registerToolbar((items) => {
+        // Convert the toolbar items to an array of active style names
+        const styles = items.map(item => {
+          if (typeof item === 'string') {
+            return item;
+          } else if (item && typeof item === 'object' && 'type' in item) {
+            return item.type;
+          }
+          return '';
+        }).filter(Boolean);
+        
+        setActiveStyles(styles);
+      });
+    }
+  }, [initialContent]); // Re-register when content is loaded
 
   const { noteId: routeNoteId, noteText, tone, originalText, noteTitle: routeNoteTitle } = route.params;
 
@@ -591,30 +613,42 @@ export default function EditorScreen() {
             <IconButton
               icon="format-bold"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('bold') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.setBold, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('bold') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-italic"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('italic') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.setItalic, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('italic') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-underline"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('underline') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.setUnderline, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('underline') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-strikethrough"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('strikeThrough') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.setStrikethrough, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('strikeThrough') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
           </View>
           
@@ -653,30 +687,42 @@ export default function EditorScreen() {
             <IconButton
               icon="format-align-left"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('justifyLeft') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('left')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('justifyLeft') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-align-center"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('justifyCenter') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('center')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('justifyCenter') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-align-right"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('justifyRight') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('right')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('justifyRight') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-align-justify"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('justifyFull') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('justify')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('justifyFull') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
           </View>
         </ScrollView>
@@ -687,23 +733,32 @@ export default function EditorScreen() {
             <IconButton
               icon="format-header-1"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('heading1') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.heading1, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('heading1') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-header-2"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('heading2') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.heading2, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('heading2') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-header-3"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('heading3') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.heading3, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('heading3') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
           </View>
           
@@ -713,16 +768,22 @@ export default function EditorScreen() {
             <IconButton
               icon="format-list-bulleted"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('unorderedList') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.insertBulletsList, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('unorderedList') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-list-numbered"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('orderedList') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.insertOrderedList, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('orderedList') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
             <IconButton
               icon="format-indent-increase"
@@ -767,9 +828,12 @@ export default function EditorScreen() {
             <IconButton
               icon="format-quote-close"
               size={20}
-              iconColor={theme.colors.onSurface}
+              iconColor={activeStyles.includes('quote') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => richText.current?.sendAction(actions.blockquote, 'action')}
-              style={styles.toolbarButton}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: activeStyles.includes('quote') ? theme.colors.primaryContainer : 'transparent' }
+              ]}
             />
           </View>
           
