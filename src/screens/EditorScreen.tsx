@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from 'react-native';
 import {
   Appbar,
@@ -15,6 +16,13 @@ import {
   Text,
   useTheme,
   IconButton,
+  Menu,
+  Divider,
+  TextInput,
+  Surface,
+  Chip,
+  Portal,
+  Modal,
 } from 'react-native-paper';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
@@ -41,9 +49,95 @@ export default function EditorScreen() {
   const [initialContent, setInitialContent] = useState('');
   const [wordCount, setWordCount] = useState(0);
   const [noteId, setNoteId] = useState<string | null>(null);
-    const [toneMode, setToneMode] = useState<string>('standard');
+  const [toneMode, setToneMode] = useState<string>('standard');
   const [lastContent, setLastContent] = useState('');
   const [isScreenFocused, setIsScreenFocused] = useState(true);
+  
+  // Advanced editor states
+  const [showFontMenu, setShowFontMenu] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [selectedFontSize, setSelectedFontSize] = useState(16);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const [tableRows, setTableRows] = useState(2);
+  const [tableCols, setTableCols] = useState(2);
+
+  // Advanced editor functions
+  const insertTable = useCallback(() => {
+    if (richText.current) {
+      let tableHtml = '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
+      for (let i = 0; i < tableRows; i++) {
+        tableHtml += '<tr>';
+        for (let j = 0; j < tableCols; j++) {
+          tableHtml += '<td style="border: 1px solid #ccc; padding: 8px; min-width: 50px;">&nbsp;</td>';
+        }
+        tableHtml += '</tr>';
+      }
+      tableHtml += '</table>';
+      
+      richText.current.insertHTML(tableHtml);
+      setShowTableModal(false);
+    }
+  }, [tableRows, tableCols]);
+
+  const insertLink = useCallback(() => {
+    if (richText.current && linkUrl && linkText) {
+      const linkHtml = `<a href="${linkUrl}" style="color: #007bff; text-decoration: underline;">${linkText}</a>`;
+      richText.current.insertHTML(linkHtml);
+      setShowLinkModal(false);
+      setLinkUrl('');
+      setLinkText('');
+    }
+  }, [linkUrl, linkText]);
+
+  const setFontSize = useCallback((size: number) => {
+    if (richText.current) {
+      richText.current.sendAction('fontSize', 'action', size);
+      setSelectedFontSize(size);
+      setShowFontMenu(false);
+    }
+  }, []);
+
+  const setTextColor = useCallback((color: string) => {
+    if (richText.current) {
+      richText.current.sendAction('foreColor', 'action', color);
+      setShowColorPicker(false);
+    }
+  }, []);
+
+  const setHighlightColor = useCallback((color: string) => {
+    if (richText.current) {
+      richText.current.sendAction('hiliteColor', 'action', color);
+      setShowColorPicker(false);
+    }
+  }, []);
+
+  const insertHorizontalRule = useCallback(() => {
+    if (richText.current) {
+      richText.current.insertHTML('<hr style="margin: 20px 0; border: none; border-top: 2px solid #ccc;">');
+    }
+  }, []);
+
+  const setTextAlignment = useCallback((alignment: 'left' | 'center' | 'right' | 'justify') => {
+    if (richText.current) {
+      switch (alignment) {
+        case 'left':
+          richText.current.sendAction('justifyLeft', 'action');
+          break;
+        case 'center':
+          richText.current.sendAction('justifyCenter', 'action');
+          break;
+        case 'right':
+          richText.current.sendAction('justifyRight', 'action');
+          break;
+        case 'justify':
+          richText.current.sendAction('justifyFull', 'action');
+          break;
+      }
+    }
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -433,7 +527,13 @@ export default function EditorScreen() {
               editorStyle={{
                 backgroundColor: theme.colors.surface,
                 color: theme.colors.onSurface,
-                contentCSSText: 'font-size: 16px; line-height: 24px; padding: 16px; min-height: 400px;'
+                contentCSSText: `
+                  font-size: 16px; 
+                  line-height: 24px; 
+                  padding: 16px; 
+                  min-height: 400px;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                `
               }}
               onChange={(content) => {
                 // Update word count on content change
@@ -444,29 +544,345 @@ export default function EditorScreen() {
                 // Trigger debounced auto-save on content change
                 debouncedAutoSave();
               }}
+              // Enhanced editor capabilities
+              useContainer={true}
+              initialHeight={400}
             />
           </Card.Content>
         </Card>
       </ScrollView>
 
-      {/* Rich Text Toolbar */}
-      <RichToolbar
-        style={[styles.toolbar, { backgroundColor: theme.colors.surface }]}
-        editor={richText}
-        selectedIconTint={theme.colors.primary}
-        iconTint={theme.colors.onSurface}
-        actions={[
-          actions.undo,
-          actions.redo,
-          actions.setBold,
-          actions.setItalic,
-          actions.heading1,
-          actions.heading2,
-          actions.insertBulletsList,
-          actions.insertOrderedList,
-          actions.keyboard
-        ]}
-      />
+      {/* Advanced Rich Text Toolbar */}
+      <Surface style={[styles.advancedToolbar, { backgroundColor: theme.colors.surface }]} elevation={3}>
+        {/* First Row - Basic Formatting */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarRow}>
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="undo"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('undo', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="redo"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('redo', 'action')}
+              style={styles.toolbarButton}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <Menu
+              visible={showFontMenu}
+              onDismiss={() => setShowFontMenu(false)}
+              anchor={
+                <Button 
+                  mode="outlined" 
+                  compact 
+                  onPress={() => setShowFontMenu(true)}
+                  style={styles.fontSizeButton}
+                >
+                  {selectedFontSize}px
+                </Button>
+              }
+            >
+              {[12, 14, 16, 18, 20, 24, 28, 32].map(size => (
+                <Menu.Item key={size} onPress={() => setFontSize(size)} title={`${size}px`} />
+              ))}
+            </Menu>
+            
+            <IconButton
+              icon="format-bold"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('bold', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-italic"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('italic', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-underline"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('underline', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-strikethrough"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('strikeThrough', 'action')}
+              style={styles.toolbarButton}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <Menu
+              visible={showColorPicker}
+              onDismiss={() => setShowColorPicker(false)}
+              anchor={
+                <IconButton
+                  icon="palette"
+                  size={20}
+                  iconColor={theme.colors.onSurface}
+                  onPress={() => setShowColorPicker(true)}
+                  style={styles.toolbarButton}
+                />
+              }
+            >
+              <Menu.Item onPress={() => setTextColor('#000000')} title="Black" />
+              <Menu.Item onPress={() => setTextColor('#FF0000')} title="Red" />
+              <Menu.Item onPress={() => setTextColor('#00FF00')} title="Green" />
+              <Menu.Item onPress={() => setTextColor('#0000FF')} title="Blue" />
+              <Menu.Item onPress={() => setTextColor('#FFA500')} title="Orange" />
+              <Menu.Item onPress={() => setTextColor('#800080')} title="Purple" />
+              <Divider />
+              <Menu.Item onPress={() => setHighlightColor('#FFFF00')} title="Highlight Yellow" />
+              <Menu.Item onPress={() => setHighlightColor('#90EE90')} title="Highlight Green" />
+              <Menu.Item onPress={() => setHighlightColor('#FFB6C1')} title="Highlight Pink" />
+            </Menu>
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="format-align-left"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setTextAlignment('left')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-align-center"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setTextAlignment('center')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-align-right"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setTextAlignment('right')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-align-justify"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setTextAlignment('justify')}
+              style={styles.toolbarButton}
+            />
+          </View>
+        </ScrollView>
+
+        {/* Second Row - Advanced Features */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarRow}>
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="format-header-1"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('heading1', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-header-2"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('heading2', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-header-3"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('heading3', 'action')}
+              style={styles.toolbarButton}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="format-list-bulleted"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('insertBulletsList', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-list-numbered"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('insertOrderedList', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-indent-increase"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('indent', 'action')}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-indent-decrease"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('outdent', 'action')}
+              style={styles.toolbarButton}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="table"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setShowTableModal(true)}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="link"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => setShowLinkModal(true)}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="minus"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={insertHorizontalRule}
+              style={styles.toolbarButton}
+            />
+            <IconButton
+              icon="format-quote-close"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.sendAction('blockquote', 'action')}
+              style={styles.toolbarButton}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="keyboard-close"
+              size={20}
+              iconColor={theme.colors.onSurface}
+              onPress={() => richText.current?.blurContentEditor()}
+              style={styles.toolbarButton}
+            />
+          </View>
+        </ScrollView>
+      </Surface>
+
+      {/* Table Creation Modal */}
+      <Portal>
+        <Modal
+          visible={showTableModal}
+          onDismiss={() => setShowTableModal(false)}
+          contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+        >
+          <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+            Insert Table
+          </Text>
+          
+          <View style={styles.tableInputContainer}>
+            <View style={styles.tableInputGroup}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>Rows:</Text>
+              <TextInput
+                mode="outlined"
+                value={tableRows.toString()}
+                onChangeText={(text) => setTableRows(parseInt(text) || 2)}
+                keyboardType="numeric"
+                style={styles.tableInput}
+              />
+            </View>
+            
+            <View style={styles.tableInputGroup}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>Columns:</Text>
+              <TextInput
+                mode="outlined"
+                value={tableCols.toString()}
+                onChangeText={(text) => setTableCols(parseInt(text) || 2)}
+                keyboardType="numeric"
+                style={styles.tableInput}
+              />
+            </View>
+          </View>
+          
+          <View style={styles.modalActions}>
+            <Button mode="outlined" onPress={() => setShowTableModal(false)} style={styles.modalButton}>
+              Cancel
+            </Button>
+            <Button mode="contained" onPress={insertTable} style={styles.modalButton}>
+              Insert Table
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
+
+      {/* Link Creation Modal */}
+      <Portal>
+        <Modal
+          visible={showLinkModal}
+          onDismiss={() => setShowLinkModal(false)}
+          contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+        >
+          <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+            Insert Link
+          </Text>
+          
+          <TextInput
+            mode="outlined"
+            label="Link Text"
+            value={linkText}
+            onChangeText={setLinkText}
+            style={styles.linkInput}
+          />
+          
+          <TextInput
+            mode="outlined"
+            label="URL"
+            value={linkUrl}
+            onChangeText={setLinkUrl}
+            style={styles.linkInput}
+            autoCapitalize="none"
+          />
+          
+          <View style={styles.modalActions}>
+            <Button mode="outlined" onPress={() => setShowLinkModal(false)} style={styles.modalButton}>
+              Cancel
+            </Button>
+            <Button 
+              mode="contained" 
+              onPress={insertLink} 
+              disabled={!linkUrl || !linkText}
+              style={styles.modalButton}
+            >
+              Insert Link
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
 
       {/* Tone regeneration options (if available) */}
       {originalText && (
@@ -543,6 +959,72 @@ const styles = StyleSheet.create({
     minHeight: 400,
     flex: 1,
   },
+  advancedToolbar: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    elevation: 3,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+  },
+  toolbarGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  toolbarButton: {
+    margin: 0,
+    width: 36,
+    height: 36,
+  },
+  toolbarDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  fontSizeButton: {
+    marginHorizontal: 4,
+    minWidth: 60,
+  },
+  modalContainer: {
+    margin: 20,
+    padding: 24,
+    borderRadius: 16,
+    elevation: 8,
+  },
+  modalTitle: {
+    marginBottom: 20,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  tableInputContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+  },
+  tableInputGroup: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  tableInput: {
+    width: 80,
+    height: 50,
+  },
+  linkInput: {
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 16,
+  },
+  modalButton: {
+    flex: 1,
+  },
   toolbar: {
     elevation: 2,
     paddingVertical: 8,
@@ -557,5 +1039,26 @@ const styles = StyleSheet.create({
   toneButton: {
     marginRight: 8,
     minWidth: 80,
+  },
+  colorPickerContainer: {
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+  },
+  colorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 8,
+  },
+  colorItem: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    margin: 4,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectedColor: {
+    borderColor: '#333',
+    borderWidth: 3,
   },
 });
