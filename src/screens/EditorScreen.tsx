@@ -25,7 +25,7 @@ import {
   Modal,
 } from 'react-native-paper';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
-import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import { RichEditor, RichToolbar, actions, FONT_SIZE } from 'react-native-pell-rich-editor';
 
 import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
@@ -104,7 +104,17 @@ export default function EditorScreen() {
 
   const setFontSize = useCallback((size: number) => {
     if (richText.current) {
-      richText.current.sendAction(actions.fontSize, 'action', size);
+      // Map size to FONT_SIZE enum: 1 = 10px, 2 = 13px, 3 = 16px, 4 = 18px, 5 = 24px, 6 = 32px, 7 = 48px
+      let fontSize: FONT_SIZE = 3; // default 16px
+      if (size <= 10) fontSize = 1;
+      else if (size <= 13) fontSize = 2;
+      else if (size <= 16) fontSize = 3;
+      else if (size <= 18) fontSize = 4;
+      else if (size <= 24) fontSize = 5;
+      else if (size <= 32) fontSize = 6;
+      else fontSize = 7;
+      
+      richText.current.setFontSize(fontSize);
       setSelectedFontSize(size);
       setShowFontMenu(false);
     }
@@ -112,14 +122,14 @@ export default function EditorScreen() {
 
   const setTextColor = useCallback((color: string) => {
     if (richText.current) {
-      richText.current.sendAction(actions.foreColor, 'action', color);
+      richText.current.setForeColor(color);
       setShowColorPicker(false);
     }
   }, []);
 
   const setHighlightColor = useCallback((color: string) => {
     if (richText.current) {
-      richText.current.sendAction(actions.hiliteColor, 'action', color);
+      richText.current.setHiliteColor(color);
       setShowColorPicker(false);
     }
   }, []);
@@ -687,41 +697,41 @@ export default function EditorScreen() {
             <IconButton
               icon="format-align-left"
               size={20}
-              iconColor={activeStyles.includes('justifyLeft') ? theme.colors.primary : theme.colors.onSurface}
+              iconColor={activeStyles.includes('alignLeft') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('left')}
               style={[
                 styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('justifyLeft') ? theme.colors.primaryContainer : 'transparent' }
+                { backgroundColor: activeStyles.includes('alignLeft') ? theme.colors.primaryContainer : 'transparent' }
               ]}
             />
             <IconButton
               icon="format-align-center"
               size={20}
-              iconColor={activeStyles.includes('justifyCenter') ? theme.colors.primary : theme.colors.onSurface}
+              iconColor={activeStyles.includes('alignCenter') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('center')}
               style={[
                 styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('justifyCenter') ? theme.colors.primaryContainer : 'transparent' }
+                { backgroundColor: activeStyles.includes('alignCenter') ? theme.colors.primaryContainer : 'transparent' }
               ]}
             />
             <IconButton
               icon="format-align-right"
               size={20}
-              iconColor={activeStyles.includes('justifyRight') ? theme.colors.primary : theme.colors.onSurface}
+              iconColor={activeStyles.includes('alignRight') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('right')}
               style={[
                 styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('justifyRight') ? theme.colors.primaryContainer : 'transparent' }
+                { backgroundColor: activeStyles.includes('alignRight') ? theme.colors.primaryContainer : 'transparent' }
               ]}
             />
             <IconButton
               icon="format-align-justify"
               size={20}
-              iconColor={activeStyles.includes('justifyFull') ? theme.colors.primary : theme.colors.onSurface}
+              iconColor={activeStyles.includes('alignFull') ? theme.colors.primary : theme.colors.onSurface}
               onPress={() => setTextAlignment('justify')}
               style={[
                 styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('justifyFull') ? theme.colors.primaryContainer : 'transparent' }
+                { backgroundColor: activeStyles.includes('alignFull') ? theme.colors.primaryContainer : 'transparent' }
               ]}
             />
           </View>
