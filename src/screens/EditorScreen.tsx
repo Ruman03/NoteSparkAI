@@ -31,6 +31,7 @@ import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
 import { useAdaptiveAutoSave } from '../hooks/useAdaptiveAutoSave';
+import VoiceInput from '../components/voice/VoiceInput';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
 import auth from '@react-native-firebase/auth';
 
@@ -55,6 +56,10 @@ export default function EditorScreen() {
   const [currentContent, setCurrentContent] = useState('');
   const [isScreenFocused, setIsScreenFocused] = useState(true);
   const [showAutoSaveSettings, setShowAutoSaveSettings] = useState(false);
+  
+  // Voice input state
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
   
   // Track active formatting styles for toolbar state
   const [activeStyles, setActiveStyles] = useState<string[]>([]);
@@ -107,6 +112,44 @@ export default function EditorScreen() {
       }
     }
   }, [linkUrl, linkText]);
+
+  // Voice input handlers
+  const handleVoiceTranscription = useCallback((text: string, isFinal: boolean) => {
+    if (richText.current && text.trim()) {
+      if (isFinal) {
+        // Insert the final transcription at current cursor position
+        const formattedText = text.endsWith('.') ? text : text + '.';
+        richText.current.insertText(formattedText + ' ');
+        
+        // Update current content for auto-save
+        richText.current.getContentHtml().then((html) => {
+          setCurrentContent(html);
+        });
+      }
+    }
+  }, []);
+
+  const handleVoiceError = useCallback((error: string) => {
+    setIsVoiceActive(false);
+    console.error('Voice input error:', error);
+    Alert.alert('Voice Input Error', error);
+  }, []);
+
+  const handleVoiceSessionComplete = useCallback((metrics: any) => {
+    setIsVoiceActive(false);
+    console.log('Voice session completed:', metrics);
+    
+    // Log analytics event
+    console.log('Voice session analytics:', {
+      words_transcribed: metrics.wordsTranscribed,
+      session_duration: metrics.totalDuration,
+      average_confidence: metrics.averageConfidence,
+    });
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    setShowVoiceInput(!showVoiceInput);
+  }, [showVoiceInput]);
 
   const setFontSize = useCallback((size: number) => {
     if (richText.current) {
@@ -916,6 +959,16 @@ export default function EditorScreen() {
           
           <View style={styles.toolbarGroup}>
             <IconButton
+              icon={showVoiceInput ? "microphone" : "microphone-outline"}
+              size={20}
+              iconColor={showVoiceInput ? theme.colors.primary : theme.colors.onSurface}
+              onPress={toggleVoiceInput}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: showVoiceInput ? theme.colors.primaryContainer : 'transparent' }
+              ]}
+            />
+            <IconButton
               icon="keyboard-close"
               size={20}
               iconColor={theme.colors.onSurface}
@@ -925,6 +978,27 @@ export default function EditorScreen() {
           </View>
         </ScrollView>
       </Surface>
+
+      {/* Voice Input Modal */}
+      {showVoiceInput && (
+        <Portal>
+          <Modal
+            visible={showVoiceInput}
+            onDismiss={() => setShowVoiceInput(false)}
+            contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+          >
+            <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+              Voice Input
+            </Text>
+            <VoiceInput
+              onTranscription={handleVoiceTranscription}
+              onError={handleVoiceError}
+              onSessionComplete={handleVoiceSessionComplete}
+              disabled={false}
+            />
+          </Modal>
+        </Portal>
+      )}
 
       {/* Table Creation Modal */}
       <Portal>
