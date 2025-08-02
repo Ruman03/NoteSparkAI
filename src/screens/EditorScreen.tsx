@@ -30,6 +30,7 @@ import { RichEditor, RichToolbar, actions, FONT_SIZE } from 'react-native-pell-r
 import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
+import { useAdaptiveAutoSave } from '../hooks/useAdaptiveAutoSave';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
 import auth from '@react-native-firebase/auth';
 
@@ -51,7 +52,9 @@ export default function EditorScreen() {
   const [noteId, setNoteId] = useState<string | null>(null);
   const [toneMode, setToneMode] = useState<string>('standard');
   const [lastContent, setLastContent] = useState('');
+  const [currentContent, setCurrentContent] = useState('');
   const [isScreenFocused, setIsScreenFocused] = useState(true);
+  const [showAutoSaveSettings, setShowAutoSaveSettings] = useState(false);
   
   // Track active formatting styles for toolbar state
   const [activeStyles, setActiveStyles] = useState<string[]>([]);
@@ -198,6 +201,73 @@ export default function EditorScreen() {
 
   const { noteId: routeNoteId, noteText, tone, originalText, noteTitle: routeNoteTitle } = route.params;
 
+  // Enhanced save function for adaptive auto-save
+  const saveNoteContent = useCallback(async (content: string, noteIdToSave: string) => {
+    if (!content || !isScreenFocused) return;
+    
+    const notesService = NotesService.getInstance();
+    const user = auth().currentUser;
+    if (!user) {
+      throw new Error('No authenticated user found');
+    }
+
+    // Generate title if needed
+    let currentTitle = noteTitle;
+    if (shouldGenerateTitleRef.current && (noteTitle === 'New Note' || !noteTitle)) {
+      const aiService = AIService.getInstance();
+      const textContent = content.replace(/<[^>]*>/g, '');
+      currentTitle = await aiService.generateNoteTitle(textContent);
+      setNoteTitle(currentTitle);
+      shouldGenerateTitleRef.current = false;
+    }
+
+    const textContent = content.replace(/<[^>]*>/g, '');
+    const currentNoteId = routeNoteId || noteIdRef.current;
+
+    if (currentNoteId) {
+      // Update existing note
+      await notesService.updateNote(user.uid, currentNoteId, {
+        title: currentTitle,
+        content: content,
+        plainText: textContent,
+        tone,
+        originalText: originalText || '',
+        tags: [],
+        updatedAt: new Date()
+      });
+    } else {
+      // Create new note
+      const newNoteId = await notesService.saveNote(user.uid, {
+        title: currentTitle,
+        content: content,
+        plainText: textContent,
+        tone,
+        originalText: originalText || '',
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      setNoteId(newNoteId);
+      noteIdRef.current = newNoteId;
+    }
+
+    setLastSaved(new Date());
+  }, [isScreenFocused, noteTitle, tone, originalText, routeNoteId]);
+
+  // Adaptive auto-save hook integration
+  const {
+    saveSettings,
+    triggerSave: manualSave,
+    hasUnsavedChanges,
+    updateSaveFrequency,
+    getCurrentInterval,
+    getNextSaveTime
+  } = useAdaptiveAutoSave(
+    currentContent,
+    noteId || 'temp', 
+    saveNoteContent
+  );
+
   // Initialize noteId with routeNoteId when editing existing notes
   useEffect(() => {
     if (routeNoteId && !noteId) {
@@ -220,132 +290,8 @@ export default function EditorScreen() {
     noteIdRef.current = noteId;
   }, [noteId]);
 
-  // Debounced auto-save with smart change detection
-  const lastContentRef = useRef('');
+  // Keep necessary refs for compatibility
   const shouldGenerateTitleRef = useRef(true);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Memoized auto-save function to prevent recreation on every render
-  const autoSave = useCallback(async () => {
-    if (!richText.current || !isScreenFocused) return;
-    
-    try {
-      console.log('EditorScreen: Starting auto-save check');
-      const html = await richText.current.getContentHtml();
-      
-      // Smart change detection - only proceed if content actually changed
-      if (!html || html.trim() === '' || html === lastContentRef.current) {
-        console.log('EditorScreen: No content changes detected, skipping save');
-        return;
-      }
-
-      console.log('EditorScreen: Content changed, proceeding with save');
-      lastContentRef.current = html;
-      setLastContent(html);
-      setIsSaving(true);
-      
-      // Calculate word count
-      const textContent = html.replace(/<[^>]*>/g, '');
-      const words = textContent.trim().split(/\s+/).filter(word => word.length > 0);
-      setWordCount(words.length);
-      console.log('EditorScreen: Word count calculated:', words.length);
-      
-      // Generate title using AI only once or when explicitly needed
-      let currentTitle = noteTitle;
-      if (shouldGenerateTitleRef.current && (noteTitle === 'New Note' || !noteTitle)) {
-        console.log('EditorScreen: Generating new title with AI');
-        const aiService = AIService.getInstance();
-        currentTitle = await aiService.generateNoteTitle(textContent);
-        setNoteTitle(currentTitle);
-        shouldGenerateTitleRef.current = false; // Prevent unnecessary title generation
-        console.log('EditorScreen: AI generated title:', currentTitle);
-      }
-      
-      // Save to database - update existing note if we have an ID, create new one if not
-      const notesService = NotesService.getInstance();
-      const user = auth().currentUser;
-      if (!user) {
-        console.error('EditorScreen: No authenticated user found');
-        return;
-      }
-
-      // Check if we have a note ID (either from route params or created previously)
-      const currentNoteId = routeNoteId || noteIdRef.current;
-      console.log('EditorScreen: Auto-save check - routeNoteId:', routeNoteId, 'noteIdRef.current:', noteIdRef.current, 'currentNoteId:', currentNoteId);
-      
-      if (currentNoteId) {
-        // Update existing note
-        console.log('EditorScreen: Updating existing note with ID:', currentNoteId);
-        await notesService.updateNote(user.uid, currentNoteId, {
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          updatedAt: new Date()
-        });
-        console.log(`EditorScreen: Auto-saved note: Updated existing note with ID: ${currentNoteId}`);
-        
-        // Ensure the noteId state is properly set
-        if (!noteIdRef.current) {
-          setNoteId(currentNoteId);
-          noteIdRef.current = currentNoteId;
-        }
-      } else {
-        // Create new note and store the ID
-        console.log('EditorScreen: Creating new note');
-        const newNoteId = await notesService.saveNote(user.uid, {
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-        setNoteId(newNoteId);
-        noteIdRef.current = newNoteId;
-        console.log(`EditorScreen: Auto-saved note: Created new note with ID: ${newNoteId}`);
-      }
-      
-      setLastSaved(new Date());
-      setIsSaving(false);
-    } catch (error) {
-      console.error('EditorScreen: Auto-save failed:', error);
-      setIsSaving(false);
-      
-      // Show user-friendly error message for persistent failures
-      if (error instanceof Error && error.message.includes('timeout')) {
-        console.log('EditorScreen: Save failed due to connection timeout - will retry on next interval');
-      }
-    }
-  }, [isScreenFocused, noteTitle, tone, originalText, routeNoteId]);
-
-  // Debounced auto-save effect - only triggers when content changes
-  const debouncedAutoSave = useCallback(() => {
-    // Clear existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    // Set new debounced timeout
-    saveTimeoutRef.current = setTimeout(() => {
-      autoSave();
-    }, 2000); // 2 second debounce - more reasonable than 3 second intervals
-  }, [autoSave]);
-
-
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const processNote = async () => {
@@ -356,7 +302,7 @@ export default function EditorScreen() {
             // Editing existing note - use content and title as-is
             console.log('EditorScreen: Processing existing note for editing');
             setInitialContent(noteText); // noteText is already HTML for existing notes
-            lastContentRef.current = noteText;
+            setCurrentContent(noteText); // Initialize adaptive auto-save content
             
             // Calculate word count from HTML content
             const plainText = noteText.replace(/<[^>]*>/g, '');
@@ -379,7 +325,7 @@ export default function EditorScreen() {
               .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
               .join('');
             setInitialContent(htmlContent);
-            lastContentRef.current = htmlContent; // Initialize content tracking
+            setCurrentContent(htmlContent); // Initialize adaptive auto-save content
             
             // Calculate initial word count
             const words = noteText.trim().split(/\s+/).filter(word => word.length > 0);
@@ -408,67 +354,30 @@ export default function EditorScreen() {
       
       if (textContent.length === 0) {
         Alert.alert('Error', 'Please add some content before saving.');
+        setIsSaving(false);
         return;
       }
       
-      // Update last content to prevent auto-save conflicts
-      lastContentRef.current = html;
-      setLastContent(html);
+      // Update current content to trigger adaptive auto-save
+      setCurrentContent(html);
       
-      // Generate title using AI (only if we don't have a title yet)
-      let currentTitle = noteTitle;
-      if (noteTitle === 'New Note' || !noteTitle) {
-        const aiService = AIService.getInstance();
-        currentTitle = await aiService.generateNoteTitle(textContent);
-        setNoteTitle(currentTitle);
-        shouldGenerateTitleRef.current = false; // Mark title as generated
-      }
+      // Trigger manual save through adaptive auto-save hook
+      const saveSuccessful = await manualSave();
       
-      // Save note
-      const notesService = NotesService.getInstance();
-      const user = auth().currentUser;
-      if (!user) {
-        console.error('EditorScreen: No authenticated user found');
-        return;
-      }
-      
-      if (noteIdRef.current) {
-        // Update existing note
-        await notesService.updateNote(user.uid, noteIdRef.current, {
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          updatedAt: new Date()
-        });
+      if (saveSuccessful) {
+        hapticService.success();
+        Alert.alert('Success', 'Note saved successfully!');
       } else {
-        // Create new note and store the ID
-        const newNoteId = await notesService.saveNote(user.uid, {
-          title: currentTitle,
-          content: html,
-          plainText: textContent,
-          tone,
-          originalText: originalText || '',
-          tags: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-        setNoteId(newNoteId);
-        noteIdRef.current = newNoteId;
+        hapticService.error();
+        Alert.alert('Error', 'Failed to save note. Please try again.');
       }
       
-      setLastSaved(new Date());
-      hapticService.success();
-      Alert.alert('Success', 'Note saved successfully!');
-      navigation.navigate('MainTabs', { screen: 'Library' });
+      setIsSaving(false);
     } catch (error) {
-      console.error("Failed to save note:", error);
+      console.error('Manual save failed:', error);
+      setIsSaving(false);
       hapticService.error();
       Alert.alert('Error', 'Failed to save note. Please try again.');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -496,7 +405,7 @@ export default function EditorScreen() {
       
       if (richText.current) {
         richText.current.setContentHTML(htmlContent);
-        lastContentRef.current = htmlContent; // Update content tracking
+        setCurrentContent(htmlContent); // Update adaptive auto-save content
         hapticService.success();
       }
     } catch (error) {
@@ -538,14 +447,37 @@ export default function EditorScreen() {
         </Button>
       </Appbar.Header>
 
-      {/* Status bar with save info and word count */}
+      {/* Enhanced status bar with adaptive auto-save info and word count */}
       <View style={[styles.statusBar, { backgroundColor: theme.colors.surfaceVariant }]}>
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-          {isSaving ? 'Saving...' : lastSaved ? `Saved ${lastSaved.toLocaleTimeString()}` : 'Not saved'}
-        </Text>
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-          {wordCount} words
-        </Text>
+        <View style={styles.statusLeft}>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {hasUnsavedChanges 
+              ? saveSettings.frequency === 'manual' 
+                ? 'Unsaved changes' 
+                : `Auto-saving (${saveSettings.frequency})`
+              : lastSaved 
+                ? `Saved ${lastSaved.toLocaleTimeString()}`
+                : 'Not saved'
+            }
+          </Text>
+          {saveSettings.frequency === 'adaptive' && (
+            <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
+              Next save in {Math.ceil(getCurrentInterval() / 1000)}s
+            </Text>
+          )}
+        </View>
+        <View style={styles.statusRight}>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {wordCount} words
+          </Text>
+          <IconButton
+            icon="cog"
+            size={16}
+            iconColor={theme.colors.onSurfaceVariant}
+            onPress={() => setShowAutoSaveSettings(true)}
+            style={{ margin: 0, padding: 4 }}
+          />
+        </View>
       </View>
 
       <ScrollView style={styles.scrollContainer}>
@@ -572,13 +504,16 @@ export default function EditorScreen() {
                 `
               }}
               onChange={(content) => {
+                // Update current content for adaptive auto-save
+                setCurrentContent(content);
+                
                 // Update word count on content change
                 const textContent = content.replace(/<[^>]*>/g, '');
                 const words = textContent.trim().split(/\s+/).filter(word => word.length > 0);
                 setWordCount(words.length);
                 
-                // Trigger debounced auto-save on content change
-                debouncedAutoSave();
+                // Note: Auto-save is now handled by the useAdaptiveAutoSave hook
+                // The hook automatically triggers saves based on user patterns and content changes
               }}
               // Enhanced editor capabilities
               useContainer={true}
@@ -1081,6 +1016,61 @@ export default function EditorScreen() {
         </Modal>
       </Portal>
 
+      {/* Auto-save Settings Modal */}
+      <Portal>
+        <Modal 
+          visible={showAutoSaveSettings} 
+          onDismiss={() => setShowAutoSaveSettings(false)}
+          contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+        >
+          <Text variant="headlineSmall" style={styles.modalTitle}>Auto-save Settings</Text>
+          
+          <Text variant="bodyMedium" style={styles.modalSubtitle}>
+            Choose how frequently your notes are automatically saved
+          </Text>
+
+          <View style={styles.settingsContainer}>
+            {[
+              { key: 'realtime', label: 'Real-time', description: 'Save every few seconds' },
+              { key: 'adaptive', label: 'Adaptive (Recommended)', description: 'Learns your editing patterns' },
+              { key: 'conservative', label: 'Conservative', description: 'Save every 10 seconds' },
+              { key: 'manual', label: 'Manual Only', description: 'Save only when you tap Save' }
+            ].map((option) => (
+              <View key={option.key} style={styles.settingOption}>
+                <View style={styles.settingInfo}>
+                  <Text variant="bodyLarge">{option.label}</Text>
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                    {option.description}
+                  </Text>
+                </View>
+                <IconButton
+                  icon={saveSettings.frequency === option.key ? 'radiobox-marked' : 'radiobox-blank'}
+                  iconColor={saveSettings.frequency === option.key ? theme.colors.primary : theme.colors.onSurface}
+                  onPress={() => updateSaveFrequency(option.key as any)}
+                />
+              </View>
+            ))}
+          </View>
+
+          {saveSettings.frequency === 'adaptive' && saveSettings.userPattern && (
+            <View style={styles.patternInfo}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                Learned pattern: {saveSettings.userPattern.editingStyle} editing, 
+                {Math.round(saveSettings.userPattern.averageEditingSpeed)} WPM
+              </Text>
+            </View>
+          )}
+
+          <Button 
+            mode="contained" 
+            onPress={() => setShowAutoSaveSettings(false)}
+            style={styles.modalButton}
+          >
+            Done
+          </Button>
+        </Modal>
+      </Portal>
+
       {/* Tone regeneration options (if available) */}
       {originalText && (
         <View style={[styles.toneBar, { backgroundColor: theme.colors.surfaceVariant }]}>
@@ -1141,6 +1131,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     elevation: 1,
   },
+  statusLeft: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  statusRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   scrollContainer: {
     flex: 1,
   },
@@ -1197,6 +1197,31 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
     fontWeight: 'bold',
+  },
+  modalSubtitle: {
+    marginBottom: 24,
+    textAlign: 'center',
+    color: '#666',
+  },
+  settingsContainer: {
+    marginBottom: 24,
+  },
+  settingOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  settingInfo: {
+    flex: 1,
+  },
+  patternInfo: {
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
   },
   tableInputContainer: {
     flexDirection: 'row',
