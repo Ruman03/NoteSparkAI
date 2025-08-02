@@ -48,6 +48,8 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import VisionService, { VisionResult } from '../services/VisionService';
 import ImageCroppingService, { CropResult } from '../services/ImageCroppingService';
+import ScannerTutorial from '../components/tutorial/ScannerTutorial';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Make Camera animatable for zoom control
 Reanimated.addWhitelistedNativeProps({
@@ -73,6 +75,10 @@ const ScannerScreen: React.FC = () => {
   const [ocrMethod, setOcrMethod] = useState<'Google Cloud Vision' | 'ML Kit' | 'Unknown'>('Unknown'); // OCR method used
   const [showCropOption, setShowCropOption] = useState<boolean>(false); // Show crop option after photo capture
   const [capturedImagePath, setCapturedImagePath] = useState<string>(''); // Store captured image path
+  
+  // Tutorial state
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const [isTutorialCompleted, setIsTutorialCompleted] = useState<boolean>(false);
   
   const cameraRef = useRef<Camera>(null);
   const device = useCameraDevice('back');
@@ -142,6 +148,30 @@ const ScannerScreen: React.FC = () => {
     zoom.value = neutralZoom;
     setCurrentZoom(Math.round(neutralZoom * 10) / 10);
   }, [device, zoom]);
+
+  // Check if tutorial should be shown
+  useEffect(() => {
+    const checkTutorialStatus = async () => {
+      try {
+        const completed = await AsyncStorage.getItem('@notespark_scanner_tutorial_completed');
+        const tutorialCompleted = completed === 'true';
+        setIsTutorialCompleted(tutorialCompleted);
+        
+        // Show tutorial if not completed and user has camera permission
+        if (!tutorialCompleted && hasPermission) {
+          setShowTutorial(true);
+        }
+      } catch (error) {
+        console.log('Error checking tutorial status:', error);
+        // Default to showing tutorial if we can't determine status
+        if (hasPermission) {
+          setShowTutorial(true);
+        }
+      }
+    };
+
+    checkTutorialStatus();
+  }, [hasPermission]);
 
   const animateCapture = () => {
     Animated.sequence([
@@ -409,6 +439,34 @@ const ScannerScreen: React.FC = () => {
     }
   };
 
+  // Tutorial handlers
+  const handleTutorialComplete = async () => {
+    try {
+      await AsyncStorage.setItem('@notespark_scanner_tutorial_completed', 'true');
+      setIsTutorialCompleted(true);
+      setShowTutorial(false);
+    } catch (error) {
+      console.log('Error saving tutorial completion:', error);
+      // Still close tutorial even if we can't save the state
+      setShowTutorial(false);
+    }
+  };
+
+  const handleTutorialSkip = async () => {
+    try {
+      await AsyncStorage.setItem('@notespark_scanner_tutorial_completed', 'true');
+      setIsTutorialCompleted(true);
+      setShowTutorial(false);
+    } catch (error) {
+      console.log('Error saving tutorial skip:', error);
+      setShowTutorial(false);
+    }
+  };
+
+  const showTutorialAgain = () => {
+    setShowTutorial(true);
+  };
+
   // Permission request screen
   if (!hasPermission) {
     return (
@@ -629,8 +687,13 @@ const ScannerScreen: React.FC = () => {
             onPress={() => navigation.goBack()}
           />
           <Title style={styles.cameraTitle}>Scan Document</Title>
-          {/* Spacer for balanced layout */}
-          <View style={{ width: 48 }} />
+          <IconButton
+            icon="help-circle-outline"
+            size={24}
+            iconColor="white"
+            onPress={showTutorialAgain}
+            style={{ opacity: isTutorialCompleted ? 1 : 0.7 }}
+          />
         </Surface>
 
         {/* Document frame overlay */}
@@ -685,6 +748,15 @@ const ScannerScreen: React.FC = () => {
           </>
         )}
       </View>
+
+      {/* Scanner Tutorial Modal */}
+      {showTutorial && (
+        <ScannerTutorial
+          visible={showTutorial}
+          onComplete={handleTutorialComplete}
+          onSkip={handleTutorialSkip}
+        />
+      )}
     </View>
   );
 };
