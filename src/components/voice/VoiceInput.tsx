@@ -19,11 +19,11 @@ import {
   Modal,
   Portal,
 } from 'react-native-paper';
-import VoiceToTextService, {
+import VoiceToTextServiceInstance, {
   VoiceTranscriptionResult,
   VoiceSessionMetrics,
   VoiceSettings,
-} from '../../services/VoiceToTextServiceMock';
+} from '../../services/VoiceToTextService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -53,7 +53,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
   settings = {},
 }) => {
   const theme = useTheme();
-  const voiceService = VoiceToTextService.getInstance();
+  const voiceService = VoiceToTextServiceInstance;
 
   // State management
   const [state, setState] = useState<VoiceInputState>({
@@ -162,13 +162,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
 
     onTranscription(result.text, result.isFinal);
 
-    // Log analytics
-    voiceService.logVoiceEvent('voice_transcription', {
-      text_length: result.text.length,
-      confidence: result.confidence,
-      is_final: result.isFinal,
-      source: result.source,
-    });
+    // Analytics handled internally by voice service
   };
 
   const handleVoiceError = (error: string) => {
@@ -182,7 +176,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
       [{ text: 'OK', onPress: () => {} }]
     );
 
-    voiceService.logVoiceEvent('voice_error', { error });
+    // Analytics handled internally by voice service
   };
 
   const handleVoiceComplete = (metrics: VoiceSessionMetrics) => {
@@ -197,7 +191,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
 
     onSessionComplete?.(metrics);
 
-    voiceService.logVoiceEvent('voice_session_complete', metrics);
+    // Analytics handled internally by voice service
   };
 
   const handleVolumeChange = (volume: number) => {
@@ -211,30 +205,23 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
     setState(prev => ({ ...prev, isInitializing: true }));
 
     try {
-      const success = await voiceService.startListening(
+      await voiceService.startListening(
         handleVoiceResult,
         handleVoiceError,
         handleVoiceComplete,
         handleVolumeChange
       );
 
-      if (success) {
-        setState(prev => ({
-          ...prev,
-          isListening: true,
-          isInitializing: false,
-          currentText: '',
-          sessionDuration: 0,
-          wordCount: 0,
-        }));
+      setState(prev => ({
+        ...prev,
+        isListening: true,
+        isInitializing: false,
+        currentText: '',
+        sessionDuration: 0,
+        wordCount: 0,
+      }));
 
-        voiceService.logVoiceEvent('voice_started', {
-          settings: voiceService.getSettings(),
-        });
-      } else {
-        setState(prev => ({ ...prev, isInitializing: false }));
-        handleVoiceError('Failed to start voice recognition');
-      }
+      // Analytics handled internally by voice service
     } catch (error) {
       setState(prev => ({ ...prev, isInitializing: false }));
       handleVoiceError('Voice service initialization failed');
@@ -266,7 +253,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
         wordCount: 0,
       }));
 
-      voiceService.logVoiceEvent('voice_cancelled', {});
+      // Analytics handled internally by voice service
     } catch (error) {
       console.error('Error canceling voice recognition:', error);
     }

@@ -33,6 +33,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>NoteSpark AI needs microphone access to convert your speech to text for note-taking.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>NoteSpark AI uses speech recognition to transcribe your voice into text for enhanced note-taking experience.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>BootSplash</string>
 	<key>UIRequiredDeviceCapabilities</key>
