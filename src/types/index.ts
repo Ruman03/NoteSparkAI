@@ -34,6 +34,39 @@ export interface BoundingBox {
   text: string;
 }
 
+// Multi-page scanning types
+export interface ScannedPage {
+  id: string;
+  imageUri: string;
+  text?: string;
+  confidence?: number;
+  timestamp: Date;
+  isProcessed: boolean;
+}
+
+export interface MultiPageScanSession {
+  id: string;
+  pages: ScannedPage[];
+  isProcessing: boolean;
+  totalPages: number;
+  currentPageIndex: number;
+  createdAt: Date;
+  combinedText?: string;
+}
+
+export interface ScanMode {
+  type: 'single' | 'multi';
+  maxPages?: number;
+  freeUserLimit?: number;
+}
+
+export interface PageProcessingProgress {
+  currentPage: number;
+  totalPages: number;
+  isProcessing: boolean;
+  processedPages: number;
+}
+
 // AI transformation types
 export type ToneType = 'professional' | 'casual' | 'simplified';
 
@@ -78,9 +111,18 @@ export interface AuthState {
 export type RootStackParamList = {
   Home: undefined;
   Scanner: undefined;
+  DocumentUpload: undefined;
+  DocumentPreview: {
+    uploadSession: UploadSession;
+  };
   ToneSelection: {
-    ocrText: string;
-    imageUri: string;
+    extractedText?: string;
+    imageUri?: string;
+    imageUris?: string[]; // For multi-page scanning
+    isMultiPage?: boolean;
+    documentText?: string; // For document uploads
+    documentMetadata?: DocumentMetadata;
+    isDocumentUpload?: boolean;
   };
   Editor: {
     noteId?: string;
@@ -238,6 +280,109 @@ export interface UseNetworkReturn {
   queueSize: number;
   syncStatus: SyncStatus;
   retrySync: () => Promise<void>;
+}
+
+// Document Upload types for Feature 1.2
+export interface DocumentFile {
+  uri: string;
+  name: string;
+  type: string;
+  size: number;
+  lastModified?: number;
+}
+
+export interface SupportedDocumentType {
+  mimeType: string;
+  extension: string;
+  displayName: string;
+  icon: string;
+  maxSize: number; // in bytes
+  description: string;
+}
+
+export interface DocumentUploadProgress {
+  phase: 'uploading' | 'processing' | 'extracting' | 'transforming' | 'complete' | 'error';
+  percentage: number;
+  message: string;
+  currentStep?: number;
+  totalSteps?: number;
+}
+
+export interface DocumentMetadata {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string[];
+  pageCount?: number;
+  wordCount?: number;
+  createdDate?: Date;
+  modifiedDate?: Date;
+  fileSize: number;
+  mimeType: string;
+}
+
+export interface ProcessingOptions {
+  extractImages: boolean;
+  preserveFormatting: boolean;
+  autoTagging: boolean;
+  generateSummary: boolean;
+  chunkLargeDocuments: boolean;
+  maxChunkSize?: number;
+}
+
+export interface DocumentProcessingResult {
+  extractedText: string;
+  metadata: DocumentMetadata;
+  images?: string[]; // Base64 encoded images
+  structure?: DocumentStructure;
+  tags?: string[];
+  summary?: string;
+  chunks?: DocumentChunk[];
+}
+
+export interface DocumentStructure {
+  headings: Array<{
+    level: number;
+    text: string;
+    position: number;
+  }>;
+  paragraphs: Array<{
+    text: string;
+    position: number;
+    style?: string;
+  }>;
+  lists: Array<{
+    type: 'ordered' | 'unordered';
+    items: string[];
+    position: number;
+  }>;
+  tables?: Array<{
+    headers: string[];
+    rows: string[][];
+    position: number;
+  }>;
+}
+
+export interface DocumentChunk {
+  id: string;
+  text: string;
+  startPosition: number;
+  endPosition: number;
+  metadata: {
+    pageNumber?: number;
+    chunkIndex: number;
+    wordCount: number;
+  };
+}
+
+export interface UploadSession {
+  id: string;
+  file: DocumentFile;
+  progress: DocumentUploadProgress;
+  result?: DocumentProcessingResult;
+  error?: string;
+  startedAt: Date;
+  completedAt?: Date;
 }
 
 // Utility types

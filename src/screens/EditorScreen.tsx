@@ -401,6 +401,9 @@ export default function EditorScreen() {
         return;
       }
       
+      // Check if this is a new note (no routeNoteId means it's a new note)
+      const isNewNote = !routeNoteId;
+      
       // Update current content to trigger adaptive auto-save
       setCurrentContent(html);
       
@@ -409,7 +412,26 @@ export default function EditorScreen() {
       
       if (saveSuccessful) {
         hapticService.success();
-        Alert.alert('Success', 'Note saved successfully!');
+        
+        if (isNewNote) {
+          // For new notes, show success and redirect to library
+          Alert.alert(
+            'Success', 
+            'Note saved successfully!',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Navigate to the MainTabs with Library screen focused
+                  navigation.navigate('MainTabs', { screen: 'Library' });
+                }
+              }
+            ]
+          );
+        } else {
+          // For existing notes, just show success message and stay on editor
+          Alert.alert('Success', 'Note updated successfully!');
+        }
       } else {
         hapticService.error();
         Alert.alert('Error', 'Failed to save note. Please try again.');

@@ -115,16 +115,20 @@ export default function LibraryScreen() {
 
   const handleNotePress = useCallback((note: Note) => {
     hapticService.light();
-    navigation.navigate('Editor', {
-      noteId: note.id,
-      noteText: note.content,
-      tone: note.tone,
-      originalText: note.originalText || ''
-    });
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Editor', {
+        noteId: note.id,
+        noteText: note.content,
+        tone: note.tone,
+        originalText: note.originalText || ''
+      });
+    }
   }, [navigation]);
 
   const handleScanNew = useCallback(() => {
     hapticService.medium();
+    // Navigate to Scanner tab
     navigation.navigate('Scanner');
   }, [navigation]);
 
@@ -176,7 +180,12 @@ export default function LibraryScreen() {
             setSelectedTone(null);
           }}
           onScanNew={handleScanNew}
-          onNewNote={() => navigation.navigate('Editor', { noteText: '', tone: 'professional' })}
+          onNewNote={() => {
+            const parentNavigation = navigation.getParent();
+            if (parentNavigation) {
+              parentNavigation.navigate('Editor', { noteText: '', tone: 'professional' });
+            }
+          }}
         />
       );
     }

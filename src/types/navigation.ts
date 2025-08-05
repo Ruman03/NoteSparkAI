@@ -1,11 +1,24 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { UploadSession, DocumentMetadata } from './index';
 
 // Main Stack Navigator Types
 export type RootStackParamList = {
   MainTabs: { screen?: keyof MainTabParamList } | undefined;
-  ToneSelection: { extractedText: string };
+  DocumentUpload: undefined;
+  DocumentPreview: {
+    uploadSession: UploadSession;
+  };
+  ToneSelection: { 
+    extractedText?: string;
+    imageUri?: string;
+    imageUris?: string[]; // For multi-page scanning
+    isMultiPage?: boolean;
+    documentText?: string; // For document uploads
+    documentMetadata?: DocumentMetadata;
+    isDocumentUpload?: boolean;
+  };
   Editor: { 
     noteId?: string;
     noteText: string; 
@@ -38,6 +51,16 @@ export type LibraryScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
+export type DocumentUploadScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'DocumentUpload'
+>;
+
+export type DocumentPreviewScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'DocumentPreview'
+>;
+
 export type ToneSelectionScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'ToneSelection'
@@ -49,10 +72,24 @@ export type EditorScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 // Route Props
+export type DocumentPreviewScreenRouteProp = {
+  route: {
+    params: {
+      uploadSession: UploadSession;
+    };
+  };
+};
+
 export type ToneSelectionScreenRouteProp = {
   route: {
     params: {
-      extractedText: string;
+      extractedText?: string;
+      imageUri?: string;
+      imageUris?: string[]; // For multi-page scanning
+      isMultiPage?: boolean;
+      documentText?: string; // For document uploads
+      documentMetadata?: DocumentMetadata;
+      isDocumentUpload?: boolean;
     };
   };
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, FlatList } from 'react-native';
 import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar } from 'react-native-paper';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, StackActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { HomeScreenNavigationProp } from '../types/navigation';
 import type { Note } from '../types';
@@ -162,15 +162,26 @@ export default function HomeScreen() {
 
   const handleCreateBlankNote = () => {
     hapticService.medium();
-    navigation.navigate('Editor', { 
+    navigation.getParent()?.navigate('Editor', { 
       noteText: '', 
       tone: 'professional' 
     });
   };
 
+  const handleDocumentUpload = () => {
+    hapticService.medium();
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.navigate('DocumentUpload');
+    } else {
+      console.error("Could not find parent navigator to open DocumentUpload. This might be a timing issue or a bug in the navigator setup.");
+      Alert.alert("Navigation Error", "Could not open the document upload screen. Please try again.");
+    }
+  };
+
   const handleNotePress = (note: Note) => {
     hapticService.light();
-    navigation.navigate('Editor', {
+    navigation.getParent()?.navigate('Editor', {
       noteText: note.content,
       tone: note.tone,
       originalText: note.originalText
@@ -362,19 +373,19 @@ export default function HomeScreen() {
             </Surface>
 
             <Surface style={[styles.actionCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleCreateBlankNote}>
+              <TouchableOpacity style={styles.actionContent} onPress={handleDocumentUpload}>
                 <Icon 
-                  name="note-plus" 
+                  name="file-upload" 
                   size={48} 
                   color={theme.colors.onSecondaryContainer} 
                   style={styles.actionIcon}
                 />
                 <View style={styles.actionText}>
                   <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer, fontWeight: 'bold' }}>
-                    Create Blank Note
+                    Upload Document
                   </Text>
                   <Text variant="bodyMedium" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8 }}>
-                    Start writing from scratch
+                    PDF, Word, PowerPoint & text files
                   </Text>
                 </View>
                 <Icon 
@@ -386,25 +397,49 @@ export default function HomeScreen() {
             </Surface>
 
             <Surface style={[styles.actionCard, { backgroundColor: theme.colors.tertiaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleViewLibrary}>
+              <TouchableOpacity style={styles.actionContent} onPress={handleCreateBlankNote}>
                 <Icon 
-                  name="library" 
+                  name="note-plus" 
                   size={48} 
                   color={theme.colors.onTertiaryContainer} 
                   style={styles.actionIcon}
                 />
                 <View style={styles.actionText}>
                   <Text variant="titleMedium" style={{ color: theme.colors.onTertiaryContainer, fontWeight: 'bold' }}>
-                    View Library
+                    Create Blank Note
                   </Text>
                   <Text variant="bodyMedium" style={{ color: theme.colors.onTertiaryContainer, opacity: 0.8 }}>
-                    Browse all your notes
+                    Start writing from scratch
                   </Text>
                 </View>
                 <Icon 
                   name="chevron-right" 
                   size={24} 
                   color={theme.colors.onTertiaryContainer} 
+                />
+              </TouchableOpacity>
+            </Surface>
+
+            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.errorContainer }]} elevation={2}>
+              <TouchableOpacity style={styles.actionContent} onPress={handleViewLibrary}>
+                <Icon 
+                  name="library" 
+                  size={48} 
+                  color={theme.colors.onErrorContainer} 
+                  style={styles.actionIcon}
+                />
+                <View style={styles.actionText}>
+                  <Text variant="titleMedium" style={{ color: theme.colors.onErrorContainer, fontWeight: 'bold' }}>
+                    View Library
+                  </Text>
+                  <Text variant="bodyMedium" style={{ color: theme.colors.onErrorContainer, opacity: 0.8 }}>
+                    Browse all your notes
+                  </Text>
+                </View>
+                <Icon 
+                  name="chevron-right" 
+                  size={24} 
+                  color={theme.colors.onErrorContainer} 
                 />
               </TouchableOpacity>
             </Surface>

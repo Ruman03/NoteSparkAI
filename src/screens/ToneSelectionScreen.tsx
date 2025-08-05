@@ -53,7 +53,14 @@ export default function ToneSelectionScreen() {
   const navigation = useNavigation<ToneSelectionScreenNavigationProp>();
   const route = useRoute<ToneSelectionRouteProp>();
   const theme = useTheme();
-  const { extractedText } = route.params;
+  const { 
+    extractedText, 
+    imageUris, 
+    isMultiPage, 
+    documentText, 
+    documentMetadata, 
+    isDocumentUpload 
+  } = route.params;
 
   const [selectedTone, setSelectedTone] = useState<'professional' | 'casual' | 'simplified' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -70,25 +77,61 @@ export default function ToneSelectionScreen() {
     setIsProcessing(true);
     try {
       const aiService = AIService.getInstance();
-      const result = await aiService.transformTextToNote({
-        text: extractedText,
-        tone: selectedTone
-      });
+      
+      let result;
+      let noteText: string;
+      let originalText: string;
+      
+      if (isDocumentUpload && documentText) {
+        // Document upload processing
+        console.log(`Processing document with tone: ${selectedTone}`);
+        result = await aiService.processDocumentToNote(
+          documentText,
+          documentMetadata?.mimeType || 'text/plain',
+          selectedTone,
+          {
+            preserveStructure: true,
+            generateSummary: false,
+            autoTag: true
+          }
+        );
+        noteText = result.transformedText;
+        originalText = documentText;
+      } else if (isMultiPage && imageUris && imageUris.length > 0) {
+        // Multi-page processing
+        console.log(`Processing ${imageUris.length} pages with tone: ${selectedTone}`);
+        result = await aiService.transformImagesToNote(imageUris, selectedTone);
+        noteText = result.transformedText;
+        originalText = `Multi-page document (${imageUris.length} pages)`;
+      } else if (extractedText) {
+        // Single page processing
+        result = await aiService.transformTextToNote({
+          text: extractedText,
+          tone: selectedTone
+        });
+        noteText = result.transformedText;
+        originalText = extractedText;
+      } else {
+        throw new Error('No text, images, or document provided for processing');
+      }
       
       hapticService.success();
       navigation.navigate('Editor', {
-        noteText: result.transformedText,
+        noteText: noteText,
         tone: selectedTone,
-        originalText: extractedText
+        originalText: originalText,
+        noteTitle: result.title
       });
     } catch (error) {
       console.error('Failed to transform text:', error);
       hapticService.error();
-      // For now, continue with original text if AI fails
+      
+      // Fallback handling
+      const fallbackText = documentText || extractedText || 'Error processing document';
       navigation.navigate('Editor', {
-        noteText: extractedText,
+        noteText: fallbackText,
         tone: selectedTone,
-        originalText: extractedText
+        originalText: fallbackText
       });
     } finally {
       setIsProcessing(false);
@@ -144,7 +187,10 @@ export default function ToneSelectionScreen() {
           Choose Your Style
         </Text>
         <Text variant="bodyMedium" style={[styles.headerSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-          Select how you'd like your notes to be formatted
+          {isMultiPage 
+            ? `Select how you'd like your ${imageUris?.length || 0}-page document to be formatted`
+            : 'Select how you\'d like your notes to be formatted'
+          }
         </Text>
       </View>
 
@@ -155,15 +201,43 @@ export default function ToneSelectionScreen() {
       >
         <View style={styles.originalTextContainer}>
           <Surface style={[styles.originalTextCard, { backgroundColor: theme.colors.surfaceVariant }]} elevation={1}>
-            <Text variant="labelMedium" style={[styles.originalTextLabel, { color: theme.colors.onSurfaceVariant }]}>
-              Extracted Text:
-            </Text>
+            <View style={styles.extractedInfoHeader}>
+              <Text variant="labelMedium" style={[styles.originalTextLabel, { color: theme.colors.onSurfaceVariant }]}>
+                {isDocumentUpload 
+                  ? 'Document Content:' 
+                  : isMultiPage 
+                    ? 'Multi-Page Document:' 
+                    : 'Extracted Text:'
+                }
+              </Text>
+              {isDocumentUpload && documentMetadata && (
+                <View style={styles.pageCountBadge}>
+                  <Icon name="file" size={16} color={theme.colors.primary} />
+                  <Text style={[styles.pageCountText, { color: theme.colors.primary }]}>
+                    {documentMetadata.wordCount?.toLocaleString() || 0} words
+                  </Text>
+                </View>
+              )}
+              {isMultiPage && imageUris && (
+                <View style={styles.pageCountBadge}>
+                  <Icon name="file-multiple" size={16} color={theme.colors.primary} />
+                  <Text style={[styles.pageCountText, { color: theme.colors.primary }]}>
+                    {imageUris.length} pages
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text 
               variant="bodySmall" 
               style={[styles.originalText, { color: theme.colors.onSurfaceVariant }]}
               numberOfLines={3}
             >
-              {extractedText}
+              {isDocumentUpload
+                ? documentText ? documentText.substring(0, 200) + '...' : 'Document uploaded successfully'
+                : isMultiPage 
+                  ? `This document contains ${imageUris?.length || 0} pages that will be processed together into a single comprehensive note.`
+                  : extractedText
+              }
             </Text>
           </Surface>
         </View>
@@ -216,6 +290,25 @@ const styles = StyleSheet.create({
   originalTextCard: {
     padding: 16,
     borderRadius: 12,
+  },
+  extractedInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pageCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 12,
+  },
+  pageCountText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   originalTextLabel: {
     fontWeight: 'bold',

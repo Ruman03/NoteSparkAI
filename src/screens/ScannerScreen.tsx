@@ -23,12 +23,15 @@ import {
   IconButton,
   FAB,
   Chip,
+  Switch,
+  Divider,
 } from 'react-native-paper';
 import { useCameraDevice, Camera, useCameraPermission, CameraProps } from 'react-native-vision-camera';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import textRecognition from '@react-native-ml-kit/text-recognition';
-import { RootStackParamList } from '../types/navigation';
+import { ScannerScreenNavigationProp } from '../types/navigation';
+import { ScannedPage, ScanMode, PageProcessingProgress } from '../types';
 import { hapticService } from '../services/HapticService';
 import Config from 'react-native-config';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -49,7 +52,9 @@ import Reanimated, {
 import VisionService, { VisionResult } from '../services/VisionService';
 import ImageCroppingService, { CropResult } from '../services/ImageCroppingService';
 import ScannerTutorial from '../components/tutorial/ScannerTutorial';
+import PageThumbnailGallery from '../components/PageThumbnailGallery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AIService } from '../services/AIService';
 
 // Make Camera animatable for zoom control
 Reanimated.addWhitelistedNativeProps({
@@ -58,8 +63,6 @@ Reanimated.addWhitelistedNativeProps({
 const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-type ScannerScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const ScannerScreen: React.FC = () => {
   const navigation = useNavigation<ScannerScreenNavigationProp>();
@@ -70,11 +73,23 @@ const ScannerScreen: React.FC = () => {
   const [extractedText, setExtractedText] = useState<string>('');
   const [showResults, setShowResults] = useState<boolean>(false);
   const [flashMode, setFlashMode] = useState<'auto' | 'on' | 'off'>('auto');
-  const [currentZoom, setCurrentZoom] = useState<number>(1); // State for zoom display
-  const [ocrConfidence, setOcrConfidence] = useState<number>(0); // OCR confidence score
-  const [ocrMethod, setOcrMethod] = useState<'Google Cloud Vision' | 'ML Kit' | 'Unknown'>('Unknown'); // OCR method used
-  const [showCropOption, setShowCropOption] = useState<boolean>(false); // Show crop option after photo capture
-  const [capturedImagePath, setCapturedImagePath] = useState<string>(''); // Store captured image path
+  const [currentZoom, setCurrentZoom] = useState<number>(1);
+  const [ocrConfidence, setOcrConfidence] = useState<number>(0);
+  const [ocrMethod, setOcrMethod] = useState<'Google Cloud Vision' | 'ML Kit' | 'Unknown'>('Unknown');
+  const [showCropOption, setShowCropOption] = useState<boolean>(false);
+  const [capturedImagePath, setCapturedImagePath] = useState<string>('');
+  
+  // Multi-page scanning state
+  const [scanMode, setScanMode] = useState<ScanMode>({ type: 'single' });
+  const [scannedPages, setScannedPages] = useState<ScannedPage[]>([]);
+  const [isMultiPageMode, setIsMultiPageMode] = useState<boolean>(false);
+  const [processingProgress, setProcessingProgress] = useState<PageProcessingProgress>({
+    currentPage: 0,
+    totalPages: 0,
+    isProcessing: false,
+    processedPages: 0,
+  });
+  const [showGallery, setShowGallery] = useState<boolean>(false);
   
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
@@ -293,17 +308,95 @@ const ScannerScreen: React.FC = () => {
       console.log('Photo captured:', photo.path);
 
       const photoPath = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`;
-      setCapturedImagePath(photoPath);
       
-      // Show crop option to user
-      setShowCropOption(true);
-      setIsProcessing(false);
+      if (isMultiPageMode) {
+        // Add to multi-page collection but offer crop option first
+        setCapturedImagePath(photoPath);
+        setShowCropOption(true);
+        setIsProcessing(false);
+      } else {
+        // Single page mode - existing behavior
+        setCapturedImagePath(photoPath);
+        setShowCropOption(true);
+        setIsProcessing(false);
+      }
     } catch (error) {
       console.error('Capture error:', error);
       hapticService.error();
       Alert.alert('Error', 'Failed to capture photo. Please try again.');
       setIsProcessing(false);
     }
+  };
+
+  // Multi-page scanning functions
+  const toggleScanMode = () => {
+    const newMode = !isMultiPageMode;
+    setIsMultiPageMode(newMode);
+    setScanMode({ type: newMode ? 'multi' : 'single' });
+    
+    // Reset state when changing modes
+    if (!newMode) {
+      setScannedPages([]);
+      setShowGallery(false);
+      setProcessingProgress({
+        currentPage: 0,
+        totalPages: 0,
+        isProcessing: false,
+        processedPages: 0,
+      });
+    }
+    
+    hapticService.light();
+    console.log(`Scanner mode changed to: ${newMode ? 'multi-page' : 'single-page'}`);
+  };
+
+  const processAllPages = async () => {
+    if (scannedPages.length === 0) {
+      Alert.alert('No Pages', 'Please capture at least one page before processing.');
+      return;
+    }
+
+    const imageUris = scannedPages.map(page => page.imageUri);
+    console.log(`Processing ${imageUris.length} pages...`);
+    
+    // Navigate to tone selection with multi-page data
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('ToneSelection', {
+        imageUris: imageUris,
+        isMultiPage: true,
+      });
+    }
+  };
+
+  const deletePage = (pageId: string) => {
+    const updatedPages = scannedPages.filter(page => page.id !== pageId);
+    setScannedPages(updatedPages);
+    
+    // Hide gallery if no pages left
+    if (updatedPages.length <= 1) {
+      setShowGallery(false);
+    }
+    
+    hapticService.medium();
+    console.log(`Deleted page ${pageId}, remaining pages: ${updatedPages.length}`);
+  };
+
+  const reorderPages = (pages: ScannedPage[]) => {
+    setScannedPages(pages);
+    hapticService.light();
+  };
+
+  const previewPage = (page: ScannedPage) => {
+    // This could open a full-screen preview modal
+    console.log('Preview page:', page.id);
+    hapticService.light();
+  };
+
+  const addAnotherPage = () => {
+    // Simply continue in multi-page mode
+    setShowGallery(false);
+    hapticService.light();
   };
 
   const processCapturedImage = async (imagePath: string, skipCrop: boolean = false) => {
@@ -327,8 +420,31 @@ const ScannerScreen: React.FC = () => {
         }
       }
       
-      // Process with OCR - Try Google Cloud Vision first, then ML Kit
-      await processImageWithEnhancedOCR(finalImagePath);
+      if (isMultiPageMode) {
+        // Add to multi-page collection
+        const newPage: ScannedPage = {
+          id: `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          imageUri: finalImagePath,
+          timestamp: new Date(),
+          isProcessed: false,
+        };
+        
+        const updatedPages = [...scannedPages, newPage];
+        setScannedPages(updatedPages);
+        
+        // Show gallery if we have multiple pages
+        if (updatedPages.length > 1) {
+          setShowGallery(true);
+        }
+        
+        setIsProcessing(false);
+        hapticService.success();
+        
+        console.log(`Multi-page: Added page ${updatedPages.length}, total pages: ${updatedPages.length}`);
+      } else {
+        // Single page mode - Process with OCR
+        await processImageWithEnhancedOCR(finalImagePath);
+      }
       
     } catch (error) {
       console.error('Image processing error:', error);
@@ -410,7 +526,10 @@ const ScannerScreen: React.FC = () => {
       return;
     }
 
-    navigation.navigate('ToneSelection', { extractedText });
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('ToneSelection', { extractedText });
+    }
   };
 
   const retryCapture = () => {
@@ -420,6 +539,19 @@ const ScannerScreen: React.FC = () => {
     setCapturedImagePath('');
     setOcrConfidence(0);
     setOcrMethod('Unknown');
+    
+    // Reset multi-page state
+    setScannedPages([]);
+    setShowGallery(false);
+    setIsMultiPageMode(false);
+    setScanMode({ type: 'single' });
+    setProcessingProgress({
+      currentPage: 0,
+      totalPages: 0,
+      isProcessing: false,
+      processedPages: 0,
+    });
+    
     setIsActive(true);
   };
 
@@ -608,7 +740,7 @@ const ScannerScreen: React.FC = () => {
               onPress={retryCapture}
             />
             <Title style={[styles.resultsTitle, { color: theme.colors.onSurface }]}>
-              Crop Photo
+              {isMultiPageMode ? `Crop Page ${scannedPages.length + 1}` : 'Crop Photo'}
             </Title>
             <View style={{ width: 48 }} />
           </View>
@@ -617,6 +749,15 @@ const ScannerScreen: React.FC = () => {
         <View style={styles.resultsContent}>
           <Card style={[styles.textCard, { backgroundColor: theme.colors.surface }]} elevation={3}>
             <Card.Content style={styles.textCardContent}>
+              {isMultiPageMode && (
+                <View style={styles.multiPageInfo}>
+                  <Icon name="file-multiple" size={20} color={theme.colors.primary} />
+                  <Text style={[styles.multiPageInfoText, { color: theme.colors.primary }]}>
+                    Page {scannedPages.length + 1} of multi-page document
+                  </Text>
+                </View>
+              )}
+              
               <Text style={[styles.textStats, { color: theme.colors.onSurfaceVariant, textAlign: 'center', marginBottom: 16 }]}>
                 For better text recognition, you can crop the image to focus only on the text area you want to scan.
               </Text>
@@ -628,7 +769,7 @@ const ScannerScreen: React.FC = () => {
                   style={[styles.actionButton, styles.retryButton]}
                   icon="file-document-outline"
                 >
-                  Use Full Image
+                  {isMultiPageMode ? 'Add Full Image' : 'Use Full Image'}
                 </Button>
                 <Button
                   mode="contained"
@@ -696,6 +837,31 @@ const ScannerScreen: React.FC = () => {
           />
         </Surface>
 
+        {/* Scan Mode Toggle */}
+        <Surface style={[styles.modeToggleContainer, { backgroundColor: 'rgba(0,0,0,0.3)' }]} elevation={0}>
+          <View style={styles.modeToggle}>
+            <Text style={[styles.modeLabel, { color: !isMultiPageMode ? 'white' : 'rgba(255,255,255,0.7)' }]}>
+              Single Page
+            </Text>
+            <Switch
+              value={isMultiPageMode}
+              onValueChange={toggleScanMode}
+              thumbColor={isMultiPageMode ? theme.colors.primary : '#f4f3f4'}
+              trackColor={{ false: 'rgba(255,255,255,0.3)', true: theme.colors.primaryContainer }}
+            />
+            <Text style={[styles.modeLabel, { color: isMultiPageMode ? 'white' : 'rgba(255,255,255,0.7)' }]}>
+              Multi-Page
+            </Text>
+          </View>
+          
+          {/* Page counter for multi-page mode */}
+          {isMultiPageMode && scannedPages.length > 0 && (
+            <Text style={styles.pageCounter}>
+              Page {scannedPages.length + 1} {scannedPages.length > 0 && `(${scannedPages.length} captured)`}
+            </Text>
+          )}
+        </Surface>
+
         {/* Document frame overlay */}
         <View style={styles.frameContainer}>
           <View style={styles.documentFrame}>
@@ -705,12 +871,17 @@ const ScannerScreen: React.FC = () => {
             <View style={[styles.corner, styles.bottomRight]} />
           </View>
           <Text style={styles.instructionText}>
-            Position document within the frame
+            {isMultiPageMode 
+              ? scannedPages.length === 0 
+                ? 'Position first page within the frame'
+                : `Position page ${scannedPages.length + 1} within the frame`
+              : 'Position document within the frame'
+            }
           </Text>
         </View>
       </SafeAreaView>
 
-      {/* Capture controls - Perfect centering with absolute positioning */}
+      {/* Capture controls */}
       <View style={styles.bottomControlsContainer}>
         {isProcessing ? (
           <View style={styles.processingOverlay}>
@@ -722,32 +893,79 @@ const ScannerScreen: React.FC = () => {
             </Surface>
           </View>
         ) : (
-          <>
-            <Animated.View style={[styles.captureButton, { 
-              backgroundColor: theme.colors.primary,
-              transform: [{ scale: scaleAnim }] 
-            }]}>
-              <IconButton
-                icon="camera"
-                size={32}
-                iconColor={theme.colors.onPrimary}
-                onPress={capturePhoto}
-                style={{ margin: 0 }}
-              />
-            </Animated.View>
+          <View style={styles.controlsLayout}>
+            {/* Multi-page mode: Additional controls */}
+            {isMultiPageMode && scannedPages.length > 0 && (
+              <View style={styles.multiPageControls}>
+                <Button
+                  mode="outlined"
+                  onPress={addAnotherPage}
+                  style={[styles.multiPageButton, { borderColor: 'rgba(255,255,255,0.8)' }]}
+                  labelStyle={{ color: 'white', fontSize: 12 }}
+                  icon="plus"
+                  compact
+                >
+                  Add Page
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={processAllPages}
+                  style={[styles.multiPageButton, { backgroundColor: theme.colors.primary }]}
+                  labelStyle={{ color: theme.colors.onPrimary, fontSize: 12 }}
+                  icon="check-all"
+                  compact
+                >
+                  Process All ({scannedPages.length})
+                </Button>
+              </View>
+            )}
             
-            {/* Flash toggle button positioned to the right */}
-            <View style={styles.flashButton}>
-              <IconButton
-                icon={getFlashIcon()}
-                size={20}
-                iconColor="white"
-                onPress={toggleFlash}
-              />
+            {/* Main capture button row */}
+            <View style={styles.captureRow}>
+              {/* Flash toggle button */}
+              <View style={styles.flashButton}>
+                <IconButton
+                  icon={getFlashIcon()}
+                  size={20}
+                  iconColor="white"
+                  onPress={toggleFlash}
+                />
+              </View>
+              
+              {/* Main capture button */}
+              <Animated.View style={[styles.captureButton, { 
+                backgroundColor: theme.colors.primary,
+                transform: [{ scale: scaleAnim }] 
+              }]}>
+                <IconButton
+                  icon="camera"
+                  size={32}
+                  iconColor={theme.colors.onPrimary}
+                  onPress={capturePhoto}
+                  style={{ margin: 0 }}
+                />
+              </Animated.View>
+              
+              {/* Right spacer to balance layout */}
+              <View style={styles.flashButton} />
             </View>
-          </>
+          </View>
         )}
       </View>
+
+      {/* Page thumbnail gallery */}
+      {isMultiPageMode && showGallery && scannedPages.length > 0 && (
+        <View style={styles.galleryContainer}>
+          <PageThumbnailGallery
+            pages={scannedPages}
+            onDeletePage={deletePage}
+            onReorderPages={reorderPages}
+            onPreviewPage={previewPage}
+            isProcessing={processingProgress.isProcessing}
+            currentProcessingPage={processingProgress.currentPage}
+          />
+        </View>
+      )}
 
       {/* Scanner Tutorial Modal */}
       {showTutorial && (
@@ -782,6 +1000,57 @@ const styles = StyleSheet.create({
   cameraTitle: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  // Multi-page mode toggle styles
+  modeToggleContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pageCounter: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  // Multi-page info styles
+  multiPageInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 8,
+  },
+  multiPageInfoText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Enhanced control layout styles
+  controlsLayout: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  captureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 20,
   },
   frameContainer: {
     flex: 1,
@@ -842,15 +1111,36 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 120,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingBottom: 40, // Increased for better spacing
+    paddingTop: 20,
+  },
+  // Multi-page control styles
+  multiPageControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 15, // Space between controls and capture button
+    gap: 12,
+  },
+  multiPageButton: {
+    flex: 1,
+    maxWidth: 140,
+    borderRadius: 20,
+  },
+  // Gallery container for thumbnail gallery
+  galleryContainer: {
+    position: 'absolute',
+    bottom: 140, // Position above bottom controls
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   // Perfect centering for main capture button
   captureButton: {
-    position: 'absolute',
-    left: '50%',
-    marginLeft: -35, // Half of width (70/2) to center perfectly
-    bottom: 25,
     width: 70,
     height: 70,
     borderRadius: 35,
@@ -864,12 +1154,9 @@ const styles = StyleSheet.create({
   },
   // Flash button positioned to the side
   flashButton: {
-    position: 'absolute',
-    right: 30,
-    bottom: 40,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',

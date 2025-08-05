@@ -11,6 +11,8 @@ import { hapticService } from '../services/HapticService';
 // Import screens (we'll create these next)
 import HomeScreen from '../screens/HomeScreen';
 import ScannerScreen from '../screens/ScannerScreen';
+import DocumentUploadScreen from '../screens/DocumentUploadScreen';
+import DocumentPreviewScreen from '../screens/DocumentPreviewScreen';
 import ToneSelectionScreen from '../screens/ToneSelectionScreen';
 import EditorScreen from '../screens/EditorScreen';
 import LibraryScreen from '../screens/LibraryScreen';
@@ -95,6 +97,21 @@ export default function AppNavigator() {
           name="MainTabs" 
           component={MainTabs}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="DocumentUpload" 
+          component={DocumentUploadScreen}
+          options={{ 
+            title: 'Upload Document',
+            presentation: 'modal',
+          }}
+        />
+        <Stack.Screen 
+          name="DocumentPreview" 
+          component={DocumentPreviewScreen}
+          options={{ 
+            title: 'Document Preview',
+          }}
         />
         <Stack.Screen 
           name="ToneSelection" 
