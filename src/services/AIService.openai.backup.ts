@@ -1,8 +1,6 @@
-// NoteSpark AI - Gemini AI Transformation Service
-// Cost-effective migration from OpenAI to Google Gemini 2.5 Flash
-// Maintains exact same interface and output format for seamless transition
+// NoteSpark AI - AI Transformation Service
+// Clean, modern implementation with proper TypeScript support
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import Config from 'react-native-config';
 
 interface TonePrompts {
@@ -31,34 +29,19 @@ const TONE_PROMPTS: TonePrompts = {
 class AIService {
   private static instance: AIService;
   private readonly apiKey: string;
-  private readonly genAI: GoogleGenerativeAI | null = null;
-  private readonly model: any = null;
+  private readonly baseUrl = 'https://api.openai.com/v1/chat/completions';
 
   constructor() {
-    // Use react-native-config for environment variables - now using Gemini
-    this.apiKey = Config.GEMINI_API_KEY || '';
+    // Use react-native-config for environment variables
+    this.apiKey = Config.OPENAI_API_KEY || '';
     
-    console.log('=== AIService (Gemini) Debug ===');
-    console.log('Config.GEMINI_API_KEY:', this.apiKey ? 'SET' : 'NOT SET');
+    console.log('=== AIService Debug ===');
+    console.log('Config.OPENAI_API_KEY:', this.apiKey ? 'SET' : 'NOT SET');
     console.log('Available config keys:', Object.keys(Config));
-    console.log('===============================');
+    console.log('=======================');
     
     if (!this.apiKey) {
-      console.warn('WARNING: No Gemini API key found. AI features will not work. Please set GEMINI_API_KEY in your .env file');
-    } else {
-      // @ts-ignore - Assign to readonly property in constructor
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-      // Use Gemini 2.5 Flash for best price-performance and adaptive thinking
-      // @ts-ignore - Assign to readonly property in constructor
-      this.model = this.genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          topK: 40,
-          maxOutputTokens: 3000,
-        }
-      });
+      console.warn('WARNING: No OpenAI API key found. AI features will not work. Please set OPENAI_API_KEY in your .env file');
     }
   }
 
@@ -70,29 +53,77 @@ class AIService {
   }
 
   async transformTextToNote(request: AITransformationRequest): Promise<AITransformationResponse> {
-    if (!this.apiKey || !this.model) {
-      throw new Error('Gemini API key is not configured. Please check your environment setup.');
+    if (!this.apiKey) {
+      throw new Error('OpenAI API key is not configured. Please check your environment setup.');
     }
 
     try {
       const prompt = TONE_PROMPTS[request.tone] || TONE_PROMPTS.professional;
       
-      const fullPrompt = `${prompt}
+      // Try GPT-4o-mini first for cost efficiency
+      let requestBody = {
+        model: 'gpt-4o-mini', // Primary model: GPT-4o-mini
+        messages: [
+          {
+            role: 'system',
+            content: prompt
+          },
+          {
+            role: 'user',
+            content: `Raw text to transform:\n\n${request.text}`
+          }
+        ],
+        max_tokens: 3000, // GPT-4o-mini supports higher token limits
+        temperature: 0.7,
+      };
 
-Raw text to transform:
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased timeout
 
-${request.text}`;
+      let response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
 
-      console.log('AIService: Sending request to Gemini 2.5 Flash...');
-      const result = await this.model.generateContent(fullPrompt);
-      const response = await result.response;
-      let transformedText = response.text();
+      clearTimeout(timeoutId);
 
-      if (!transformedText) {
-        throw new Error('No content received from Gemini API');
+      // If GPT-4o-mini fails, try GPT-4o as fallback
+      if (!response.ok && response.status === 404) {
+        console.log('GPT-4o-mini not available, trying GPT-4o...');
+        requestBody.model = 'gpt-4o';
+        
+        const fallbackController = new AbortController();
+        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 45000);
+        
+        response = await fetch(this.baseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: fallbackController.signal,
+        });
+        
+        clearTimeout(fallbackTimeoutId);
       }
 
-      console.log('AIService: Received response from Gemini');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      let transformedText = data.choices?.[0]?.message?.content || '';
+
+      if (!transformedText) {
+        throw new Error('No content received from OpenAI API');
+      }
 
       // Clean up the response - remove markdown code blocks if present
       transformedText = this.cleanupAIResponse(transformedText);
@@ -108,39 +139,58 @@ ${request.text}`;
       };
 
     } catch (error) {
-      console.error('AIService: Error in transformTextToNote:', error);
       if (error instanceof Error) {
-        throw new Error(`Gemini API error: ${error.message}`);
+        if (error.name === 'AbortError') {
+          throw new Error('Request timed out. Please try again.');
+        }
+        throw error;
       }
-      throw new Error('Failed to transform text with Gemini API');
+      throw new Error('Failed to transform text');
     }
   }
 
   async generateNoteTitle(content: string): Promise<string> {
     try {
-      if (!this.model) {
-        return this.generateFallbackTitle(content);
-      }
+      const requestBody = {
+        model: 'gpt-4o-mini', // Use GPT-4o-mini for title generation
+        messages: [
+          {
+            role: 'system',
+            content: 'Generate a concise, descriptive title (max 60 characters) for the following study notes. Return only the title, no quotes or extra text.'
+          },
+          {
+            role: 'user',
+            content: content.substring(0, 1000) // First 1000 chars for title generation
+          }
+        ],
+        max_tokens: 20,
+        temperature: 0.3,
+      };
 
-      const prompt = `Generate a concise, descriptive title (max 60 characters) for the following study notes. Return only the title, no quotes or extra text.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-Content: ${content.substring(0, 1000)}`;
-
-      console.log('AIService: Generating title with Gemini...');
-      const result = await this.model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 20,
-        }
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        const title = data.choices?.[0]?.message?.content?.trim() || '';
+        return title || this.generateFallbackTitle(content);
+      }
       
-      const response = await result.response;
-      const title = response.text()?.trim() || '';
-      
-      return title || this.generateFallbackTitle(content);
+      return this.generateFallbackTitle(content);
     } catch (error) {
-      console.warn('AIService: Failed to generate title, using fallback:', error);
+      console.warn('Failed to generate AI title, using fallback:', error);
       return this.generateFallbackTitle(content);
     }
   }
@@ -188,15 +238,17 @@ Content: ${content.substring(0, 1000)}`;
   // Health check method
   async checkAPIHealth(): Promise<boolean> {
     try {
-      if (!this.apiKey || !this.model) {
+      if (!this.apiKey || this.apiKey === 'your_openai_api_key_here') {
         return false;
       }
       
-      // Test with a simple prompt
-      const result = await this.model.generateContent('Test connection');
-      return result && result.response;
-    } catch (error) {
-      console.warn('AIService: Health check failed:', error);
+      const response = await fetch('https://api.openai.com/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+      });
+      return response.ok;
+    } catch {
       return false;
     }
   }

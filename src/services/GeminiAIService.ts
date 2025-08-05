@@ -1,6 +1,6 @@
 // NoteSpark AI - Gemini AI Transformation Service
 // Cost-effective migration from OpenAI to Google Gemini 2.5 Flash
-// Maintains exact same interface and output format for seamless transition
+// Maintains exact same interface and output format
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Config from 'react-native-config';
@@ -28,27 +28,27 @@ const TONE_PROMPTS: TonePrompts = {
   simplified: `Transform the following raw text into simple, concise study notes that are easy to understand. Break down complex concepts into digestible pieces. Use clear, straightforward language and format as HTML with basic structure. Use <h2>, <h3>, <ul>, <li>, <strong>, and <em> tags. Focus on the most important points and make everything crystal clear. IMPORTANT: Return only the HTML content without any markdown code blocks or backticks.`
 };
 
-class AIService {
-  private static instance: AIService;
+class GeminiAIService {
+  private static instance: GeminiAIService;
   private readonly apiKey: string;
   private readonly genAI: GoogleGenerativeAI | null = null;
   private readonly model: any = null;
 
   constructor() {
-    // Use react-native-config for environment variables - now using Gemini
+    // Use react-native-config for environment variables
     this.apiKey = Config.GEMINI_API_KEY || '';
     
-    console.log('=== AIService (Gemini) Debug ===');
+    console.log('=== GeminiAIService Debug ===');
     console.log('Config.GEMINI_API_KEY:', this.apiKey ? 'SET' : 'NOT SET');
     console.log('Available config keys:', Object.keys(Config));
-    console.log('===============================');
+    console.log('=============================');
     
     if (!this.apiKey) {
       console.warn('WARNING: No Gemini API key found. AI features will not work. Please set GEMINI_API_KEY in your .env file');
     } else {
       // @ts-ignore - Assign to readonly property in constructor
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      // Use Gemini 2.5 Flash for best price-performance and adaptive thinking
+      // Use Gemini 2.5 Flash for optimal speed and cost
       // @ts-ignore - Assign to readonly property in constructor
       this.model = this.genAI.getGenerativeModel({ 
         model: "gemini-2.5-flash",
@@ -62,11 +62,11 @@ class AIService {
     }
   }
 
-  static getInstance(): AIService {
-    if (!AIService.instance) {
-      AIService.instance = new AIService();
+  static getInstance(): GeminiAIService {
+    if (!GeminiAIService.instance) {
+      GeminiAIService.instance = new GeminiAIService();
     }
-    return AIService.instance;
+    return GeminiAIService.instance;
   }
 
   async transformTextToNote(request: AITransformationRequest): Promise<AITransformationResponse> {
@@ -83,7 +83,7 @@ Raw text to transform:
 
 ${request.text}`;
 
-      console.log('AIService: Sending request to Gemini 2.5 Flash...');
+      console.log('GeminiAIService: Sending request to Gemini 2.5 Flash...');
       const result = await this.model.generateContent(fullPrompt);
       const response = await result.response;
       let transformedText = response.text();
@@ -92,7 +92,7 @@ ${request.text}`;
         throw new Error('No content received from Gemini API');
       }
 
-      console.log('AIService: Received response from Gemini');
+      console.log('GeminiAIService: Received response from Gemini');
 
       // Clean up the response - remove markdown code blocks if present
       transformedText = this.cleanupAIResponse(transformedText);
@@ -108,7 +108,7 @@ ${request.text}`;
       };
 
     } catch (error) {
-      console.error('AIService: Error in transformTextToNote:', error);
+      console.error('GeminiAIService: Error in transformTextToNote:', error);
       if (error instanceof Error) {
         throw new Error(`Gemini API error: ${error.message}`);
       }
@@ -126,7 +126,7 @@ ${request.text}`;
 
 Content: ${content.substring(0, 1000)}`;
 
-      console.log('AIService: Generating title with Gemini...');
+      console.log('GeminiAIService: Generating title with Gemini...');
       const result = await this.model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
@@ -140,7 +140,7 @@ Content: ${content.substring(0, 1000)}`;
       
       return title || this.generateFallbackTitle(content);
     } catch (error) {
-      console.warn('AIService: Failed to generate title, using fallback:', error);
+      console.warn('GeminiAIService: Failed to generate title, using fallback:', error);
       return this.generateFallbackTitle(content);
     }
   }
@@ -172,7 +172,7 @@ Content: ${content.substring(0, 1000)}`;
     
     // Log the cleanup for debugging
     if (response !== cleaned) {
-      console.log('AIService: Cleaned up AI response - removed markdown code blocks');
+      console.log('GeminiAIService: Cleaned up AI response - removed markdown code blocks');
     }
     
     return cleaned;
@@ -196,10 +196,10 @@ Content: ${content.substring(0, 1000)}`;
       const result = await this.model.generateContent('Test connection');
       return result && result.response;
     } catch (error) {
-      console.warn('AIService: Health check failed:', error);
+      console.warn('GeminiAIService: Health check failed:', error);
       return false;
     }
   }
 }
 
-export { AIService, type AITransformationRequest, type AITransformationResponse };
+export { GeminiAIService, type AITransformationRequest, type AITransformationResponse };
