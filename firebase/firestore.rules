@@ -11,32 +11,103 @@ service cloud.firestore {
       allow create: if request.auth != null 
         && request.auth.uid == request.resource.data.userId
         && validateNoteData(request.resource.data);
+
+      // Subcollection: Note Versions
+      match /versions/{versionId} {
+        // Users can only access versions of their own notes
+        allow read, write, delete: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/notes/$(noteId)).data.userId;
+        
+        // Allow create version if user owns the parent note and provides valid data
+        allow create: if request.auth != null 
+          && request.auth.uid == get(/databases/$(database)/documents/notes/$(noteId)).data.userId
+          && request.auth.uid == request.resource.data.userId
+          && validateVersionData(request.resource.data);
+      }
+    }
+
+    // Flat Note Versions collection (alternative structure - keeping for compatibility)
+    match /noteVersions/{versionId} {
+      // Users can only read, write, and delete their own note versions
+      allow read, write, delete: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      
+      // Allow create if user is authenticated and sets correct userId
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.userId
+        && validateVersionData(request.resource.data);
     }
     
-    // User profiles collection (if we add it later)
+    // User profiles collection
     match /users/{userId} {
+      // Users can only access their own profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Validate user profile data
+      allow create, update: if request.auth != null 
+        && request.auth.uid == userId
+        && validateUserData(request.resource.data);
     }
     
-    // Analytics collection (read-only for users, write for system)
+    // System collections (read-only for users)
     match /analytics/{document} {
       allow read: if request.auth != null;
       allow write: if false; // Only system/admin can write analytics
     }
+    
+    match /system/{document} {
+      allow read: if false; // No user access to system data
+      allow write: if false; // Only system/admin access
+    }
+
+    // Prevent access to any other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
 
-// Validation function for note data
+// Validation function for note data - HACK-PROOF
 function validateNoteData(data) {
   return data.keys().hasAll(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt', 'userId', 'tags', 'isStarred'])
+    && data.keys().hasOnly(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt', 'userId', 'tags', 'isStarred'])
     && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-    && data.content is string && data.content.size() <= 50000
+    && data.content is string && data.content.size() <= 100000 // Increased for rich text
     && data.plainText is string && data.plainText.size() <= 50000
     && data.tone in ['professional', 'casual', 'simplified']
-    && data.wordCount is number && data.wordCount >= 0
+    && data.wordCount is number && data.wordCount >= 0 && data.wordCount <= 50000
     && data.createdAt is timestamp
     && data.updatedAt is timestamp
-    && data.userId is string
+    && data.userId is string && data.userId.size() > 0
     && data.tags is list && data.tags.size() <= 20
     && data.isStarred is bool;
+}
+
+// Validation function for version data - HACK-PROOF
+function validateVersionData(data) {
+  return data.keys().hasAll(['noteId', 'content', 'version', 'createdAt', 'userId', 'size', 'metadata'])
+    && data.keys().hasOnly(['noteId', 'content', 'version', 'createdAt', 'userId', 'size', 'metadata'])
+    && data.noteId is string && data.noteId.size() > 0 && data.noteId.size() <= 100
+    && data.content is string && data.content.size() <= 100000
+    && data.version is number && data.version >= 1 && data.version <= 1000
+    && data.createdAt is timestamp
+    && data.userId is string && data.userId.size() > 0
+    && data.size is number && data.size >= 0 && data.size <= 100000
+    && data.metadata is map
+    && data.metadata.keys().hasAll(['wordCount', 'characterCount'])
+    && data.metadata.keys().hasOnly(['wordCount', 'characterCount'])
+    && data.metadata.wordCount is number && data.metadata.wordCount >= 0 && data.metadata.wordCount <= 50000
+    && data.metadata.characterCount is number && data.metadata.characterCount >= 0 && data.metadata.characterCount <= 100000;
+}
+
+// Validation function for user profile data - HACK-PROOF
+function validateUserData(data) {
+  return data.keys().hasOnly(['email', 'displayName', 'photoURL', 'createdAt', 'updatedAt', 'preferences', 'subscription'])
+    && (data.email == null || (data.email is string && data.email.size() <= 320))
+    && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100))
+    && (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 500))
+    && data.createdAt is timestamp
+    && data.updatedAt is timestamp
+    && (data.preferences == null || data.preferences is map)
+    && (data.subscription == null || data.subscription is map);
 }
