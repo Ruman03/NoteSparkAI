@@ -5,6 +5,7 @@ import {
   RefreshControl, 
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { 
@@ -14,6 +15,7 @@ import {
 } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DocumentPickerResponse, pick, types } from '@react-native-documents/picker';
 
 import type { LibraryScreenNavigationProp } from '../types/navigation';
 import { NotesService } from '../services/NotesService';
@@ -44,6 +46,7 @@ export default function LibraryScreen() {
   // Actions modal state
   const [showActionsModal, setShowActionsModal] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
 
   const loadNotes = useCallback(async () => {
     const user = auth().currentUser;
@@ -130,6 +133,12 @@ export default function LibraryScreen() {
     hapticService.medium();
     // Navigate to Scanner tab
     navigation.navigate('Scanner');
+  }, [navigation]);
+
+  const handleDocumentUpload = useCallback(() => {
+    hapticService.medium();
+    // Navigate to DocumentUploadScreen using composite navigation
+    navigation.navigate('DocumentUploadScreen');
   }, [navigation]);
 
   const handleShowActions = useCallback((note: Note) => {
@@ -230,10 +239,27 @@ export default function LibraryScreen() {
         
         {renderContent()}
         
-        <FAB
-          icon="camera-plus"
-          onPress={handleScanNew}
-          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+        <FAB.Group
+          open={fabOpen}
+          visible
+          icon={fabOpen ? 'close' : 'plus'}
+          actions={[
+            {
+              icon: 'camera-plus',
+              label: 'Scan Document',
+              onPress: handleScanNew,
+              style: { backgroundColor: theme.colors.primary },
+            },
+            {
+              icon: 'file-upload',
+              label: 'Upload Document',
+              onPress: handleDocumentUpload,
+              style: { backgroundColor: theme.colors.secondary },
+            },
+          ]}
+          onStateChange={({ open }) => setFabOpen(open)}
+          style={styles.fab}
+          fabStyle={{ backgroundColor: theme.colors.primary }}
           color={theme.colors.onPrimary}
         />
 

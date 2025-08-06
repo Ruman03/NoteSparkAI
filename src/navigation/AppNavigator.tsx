@@ -99,7 +99,7 @@ export default function AppNavigator() {
           options={{ headerShown: false }}
         />
         <Stack.Screen 
-          name="DocumentUpload" 
+          name="DocumentUploadScreen" 
           component={DocumentUploadScreen}
           options={{ 
             title: 'Upload Document',

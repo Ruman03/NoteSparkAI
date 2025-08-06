@@ -26,7 +26,7 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { pick, types } from '@react-native-documents/picker';
+import DocumentPicker from '@react-native-documents/picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { hapticService } from '../services/HapticService';
 import DocumentProcessor from '../services/DocumentProcessor';
@@ -38,6 +38,7 @@ import type {
   DocumentUploadProgress 
 } from '../types';
 import type { DocumentUploadScreenNavigationProp } from '../types/navigation';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 const { width, height } = Dimensions.get('window');
 
@@ -78,14 +79,14 @@ export default function DocumentUploadScreen() {
     try {
       hapticService.medium();
       
-      const results = await pick({
+      const results = await DocumentPicker.pick({
         type: [
-          types.pdf,
-          types.doc,
-          types.docx,
-          types.ppt,
-          types.pptx,
-          types.plainText
+          DocumentPicker.types.pdf,
+          DocumentPicker.types.doc,
+          DocumentPicker.types.docx,
+          DocumentPicker.types.ppt,
+          DocumentPicker.types.pptx,
+          DocumentPicker.types.plainText
         ],
         allowMultiSelection: true,
         copyTo: 'documentDirectory'

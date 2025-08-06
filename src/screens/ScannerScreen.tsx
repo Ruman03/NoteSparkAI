@@ -95,6 +95,10 @@ const ScannerScreen: React.FC = () => {
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
   const [isTutorialCompleted, setIsTutorialCompleted] = useState<boolean>(false);
   
+  // Multi-page guidance state
+  const [showMultiPageGuidance, setShowMultiPageGuidance] = useState<boolean>(false);
+  const guidanceOpacity = useRef(new Animated.Value(0)).current;
+  
   const cameraRef = useRef<Camera>(null);
   const device = useCameraDevice('back');
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -350,6 +354,28 @@ const ScannerScreen: React.FC = () => {
     console.log(`Scanner mode changed to: ${newMode ? 'multi-page' : 'single-page'}`);
   };
 
+  // Show contextual guidance for multi-page mode
+  const showMultiPageContextualGuidance = () => {
+    setShowMultiPageGuidance(true);
+    
+    // Animate guidance in
+    Animated.sequence([
+      Animated.timing(guidanceOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(3000), // Show for 3 seconds
+      Animated.timing(guidanceOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowMultiPageGuidance(false);
+    });
+  };
+
   const processAllPages = async () => {
     if (scannedPages.length === 0) {
       Alert.alert('No Pages', 'Please capture at least one page before processing.');
@@ -439,6 +465,11 @@ const ScannerScreen: React.FC = () => {
         
         setIsProcessing(false);
         hapticService.success();
+        
+        // Show contextual guidance for first page in multi-page mode
+        if (updatedPages.length === 1) {
+          showMultiPageContextualGuidance();
+        }
         
         console.log(`Multi-page: Added page ${updatedPages.length}, total pages: ${updatedPages.length}`);
       } else {
@@ -967,6 +998,18 @@ const ScannerScreen: React.FC = () => {
         </View>
       )}
 
+      {/* Multi-page contextual guidance */}
+      {showMultiPageGuidance && (
+        <Animated.View style={[styles.guidanceToast, { opacity: guidanceOpacity }]}>
+          <Surface style={styles.guidanceContent} elevation={3}>
+            <Icon name="check-circle" size={20} color={theme.colors.primary} />
+            <Text style={[styles.guidanceText, { color: theme.colors.onSurface }]}>
+              Page saved. Tap again to add another page.
+            </Text>
+          </Surface>
+        </Animated.View>
+      )}
+
       {/* Scanner Tutorial Modal */}
       {showTutorial && (
         <ScannerTutorial
@@ -1320,6 +1363,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  guidanceToast: {
+    position: 'absolute',
+    top: 120,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+    alignItems: 'center',
+  },
+  guidanceContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    gap: 8,
+  },
+  guidanceText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
   },
 });
 

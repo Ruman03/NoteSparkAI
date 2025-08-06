@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, FlatList } from 'react-native';
 import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar } from 'react-native-paper';
-import { useNavigation, useFocusEffect, StackActions } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { HomeScreenNavigationProp } from '../types/navigation';
 import type { Note } from '../types';
@@ -162,50 +162,78 @@ export default function HomeScreen() {
 
   const handleCreateBlankNote = () => {
     hapticService.medium();
-    navigation.getParent()?.navigate('Editor', { 
-      noteText: '', 
-      tone: 'professional' 
-    });
-  };
-
-  const handleDocumentUpload = () => {
-    hapticService.medium();
-    const parent = navigation.getParent();
-    if (parent) {
-      parent.navigate('DocumentUpload');
-    } else {
-      console.error("Could not find parent navigator to open DocumentUpload. This might be a timing issue or a bug in the navigator setup.");
-      Alert.alert("Navigation Error", "Could not open the document upload screen. Please try again.");
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Editor', { 
+        noteText: '', 
+        tone: 'professional' 
+      });
     }
   };
 
   const handleNotePress = (note: Note) => {
     hapticService.light();
-    navigation.getParent()?.navigate('Editor', {
-      noteText: note.content,
-      tone: note.tone,
-      originalText: note.originalText
-    });
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Editor', {
+        noteText: note.content,
+        tone: note.tone,
+        originalText: note.originalText
+      });
+    }
   };
 
-  const renderRecentNote = ({ item }: { item: Note }) => (
-    <Card 
-      style={[styles.recentNoteCard, { backgroundColor: theme.colors.surfaceVariant }]}
-      onPress={() => handleNotePress(item)}
-    >
-      <Card.Content style={styles.recentNoteContent}>
-        <Text variant="titleSmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>
-          {item.title || 'Untitled Note'}
-        </Text>
-        <Text variant="bodySmall" numberOfLines={2} style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
-          {item.plainText || 'No content available'}
-        </Text>
-        <Text variant="labelSmall" style={{ color: theme.colors.primary, marginTop: 4 }}>
-          {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'Unknown date'}
-        </Text>
-      </Card.Content>
-    </Card>
-  );
+  const renderRecentNote = ({ item }: { item: Note }) => {
+    // Determine note type icon based on source
+    const getNoteTypeIcon = (note: Note) => {
+      if (note.sourceImageUrl) return 'camera';
+      if (note.originalText && note.originalText.length > note.content.length) return 'file-document';
+      return 'pencil';
+    };
+
+    // Get content preview (first 80 characters)
+    const getContentPreview = (note: Note) => {
+      const content = note.plainText || note.content || 'No content available';
+      return content.length > 80 ? content.substring(0, 80) + '...' : content;
+    };
+
+    return (
+      <Card 
+        style={[styles.recentNoteCard, { backgroundColor: theme.colors.surface }]}
+        onPress={() => handleNotePress(item)}
+        elevation={1}
+      >
+        <Card.Content style={styles.recentNoteContent}>
+          {/* Header with icon and title */}
+          <View style={styles.recentNoteHeader}>
+            <View style={[styles.noteTypeIconContainer, { backgroundColor: theme.colors.primaryContainer }]}>
+              <Icon 
+                name={getNoteTypeIcon(item)} 
+                size={14} 
+                color={theme.colors.onPrimaryContainer}
+              />
+            </View>
+            <Text variant="titleSmall" numberOfLines={1} style={[styles.noteTitle, { color: theme.colors.onSurface }]}>
+              {item.title || 'Untitled Note'}
+            </Text>
+          </View>
+
+          {/* Content preview */}
+          <Text variant="bodySmall" numberOfLines={3} style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}>
+            {getContentPreview(item)}
+          </Text>
+
+          {/* Footer with date */}
+          <Text variant="labelSmall" style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}>
+            {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric' 
+            }) : 'Unknown'}
+          </Text>
+        </Card.Content>
+      </Card>
+    );
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -342,6 +370,50 @@ export default function HomeScreen() {
             </View>
           )}
 
+          {/* First-Time User Welcome State */}
+          {recentNotes.length === 0 && (
+            <View style={styles.welcomeSection}>
+              <Surface style={[styles.welcomeCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={3}>
+                <View style={styles.welcomeContent}>
+                  <Icon 
+                    name="star-shooting" 
+                    size={64} 
+                    color={theme.colors.secondary}
+                    style={styles.welcomeIcon}
+                  />
+                  <Text 
+                    variant="headlineSmall" 
+                    style={[styles.welcomeTitle, { color: theme.colors.onSecondaryContainer }]}
+                  >
+                    Welcome to NoteSpark AI! ✨
+                  </Text>
+                  <Text 
+                    variant="bodyLarge" 
+                    style={[styles.welcomeSubtitle, { color: theme.colors.onSecondaryContainer, opacity: 0.8 }]}
+                  >
+                    Transform your documents and thoughts into intelligent notes with AI-powered insights.
+                  </Text>
+                  <Text 
+                    variant="bodyMedium" 
+                    style={[styles.welcomeHint, { color: theme.colors.onSecondaryContainer, opacity: 0.7 }]}
+                  >
+                    Get started by scanning your first document or creating a new note below!
+                  </Text>
+                  <Button
+                    mode="contained"
+                    onPress={handleScanDocument}
+                    style={[styles.welcomeButton, { backgroundColor: theme.colors.secondary }]}
+                    contentStyle={styles.welcomeButtonContent}
+                    labelStyle={{ color: theme.colors.onSecondary, fontWeight: 'bold' }}
+                    icon="camera-plus"
+                  >
+                    Scan Your First Document
+                  </Button>
+                </View>
+              </Surface>
+            </View>
+          )}
+
           {/* Quick Actions */}
           <View style={styles.actionsContainer}>
             <Text variant="titleLarge" style={[styles.sectionTitle, { color: theme.colors.onSurface, marginBottom: 16 }]}>
@@ -368,30 +440,6 @@ export default function HomeScreen() {
                   name="chevron-right" 
                   size={24} 
                   color={theme.colors.onPrimaryContainer} 
-                />
-              </TouchableOpacity>
-            </Surface>
-
-            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleDocumentUpload}>
-                <Icon 
-                  name="file-upload" 
-                  size={48} 
-                  color={theme.colors.onSecondaryContainer} 
-                  style={styles.actionIcon}
-                />
-                <View style={styles.actionText}>
-                  <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer, fontWeight: 'bold' }}>
-                    Upload Document
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8 }}>
-                    PDF, Word, PowerPoint & text files
-                  </Text>
-                </View>
-                <Icon 
-                  name="chevron-right" 
-                  size={24} 
-                  color={theme.colors.onSecondaryContainer} 
                 />
               </TouchableOpacity>
             </Surface>
@@ -542,12 +590,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   recentNoteCard: {
-    width: 160,
+    width: 180,
     marginRight: 12,
-    borderRadius: 12,
+    borderRadius: 16,
   },
   recentNoteContent: {
-    padding: 12,
+    padding: 16,
+  },
+  recentNoteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  noteTypeIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  noteTitle: {
+    flex: 1,
+    fontWeight: '600',
+  },
+  notePreview: {
+    lineHeight: 18,
+    marginBottom: 12,
+    minHeight: 54, // 3 lines minimum
+  },
+  noteDate: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  recentNoteFooter: {
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
   },
   actionsContainer: {
     marginBottom: 24,
@@ -570,5 +652,43 @@ const styles = StyleSheet.create({
   signOutButton: {
     marginTop: 24,
     marginBottom: 32,
+  },
+  welcomeSection: {
+    marginBottom: 24,
+  },
+  welcomeCard: {
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 4,
+  },
+  welcomeContent: {
+    alignItems: 'center',
+    textAlign: 'center',
+  },
+  welcomeIcon: {
+    marginBottom: 16,
+  },
+  welcomeTitle: {
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  welcomeSubtitle: {
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 24,
+  },
+  welcomeHint: {
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  welcomeButton: {
+    borderRadius: 12,
+    elevation: 2,
+  },
+  welcomeButtonContent: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
 });

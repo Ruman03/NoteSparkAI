@@ -6,7 +6,7 @@ import type { UploadSession, DocumentMetadata } from './index';
 // Main Stack Navigator Types
 export type RootStackParamList = {
   MainTabs: { screen?: keyof MainTabParamList } | undefined;
-  DocumentUpload: undefined;
+  DocumentUploadScreen: undefined;
   DocumentPreview: {
     uploadSession: UploadSession;
   };
@@ -53,7 +53,7 @@ export type LibraryScreenNavigationProp = CompositeNavigationProp<
 
 export type DocumentUploadScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'DocumentUpload'
+  'DocumentUploadScreen'
 >;
 
 export type DocumentPreviewScreenNavigationProp = NativeStackNavigationProp<

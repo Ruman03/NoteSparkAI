@@ -312,7 +312,7 @@ Since you've already completed the **Gemini 2.5 Flash migration** successfully, 
   - **Automatic Tagging**: Content-based tag generation for better organization
   - **File Size Management**: Premium user features with larger file size limits
   - **Progress Tracking**: Real-time upload and processing status with error handling
-  - **Navigation Integration**: Fixed nested navigator routing for seamless screen transitions using getParent() method
+  - **Navigation Integration**: Fixed nested navigator routing using CommonActions.navigate() for reliable cross-navigator navigation
 
 * **AUGUST 5, 2025: MULTI-PAGE SCANNING IMPLEMENTATION** ✅ - Successfully implemented Feature 1.1 with enhanced UI/UX:
   - **Progressive Multi-Page Scanning**: Toggle between single/multi-page modes with visual feedback

@@ -18,6 +18,19 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
   const isGridView = viewMode === 'grid';
   const cardWidth = isGridView ? (width - 48) / 2 : width - 32;
 
+  // Determine note source type
+  const getNoteSourceIcon = () => {
+    if (note.sourceImageUrl) return 'camera';
+    if (note.originalText && note.originalText.length > note.content.length) return 'file-document';
+    return 'pencil';
+  };
+
+  const getNoteSourceColor = () => {
+    if (note.sourceImageUrl) return theme.colors.secondary;
+    if (note.originalText && note.originalText.length > note.content.length) return theme.colors.tertiary;
+    return theme.colors.primary;
+  };
+
   return (
     <TouchableOpacity onPress={() => onPress(note)} activeOpacity={0.7}>
       <Card 
@@ -29,6 +42,20 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
         elevation={3}
       >
         <Card.Content style={[styles.noteContent, isGridView && styles.gridNoteContent]}>
+          {/* Note Source Type Indicator */}
+          <View style={styles.sourceTypeIndicator}>
+            <Avatar.Icon
+              size={24}
+              icon={getNoteSourceIcon()}
+              style={{ 
+                backgroundColor: getNoteSourceColor() + '20',
+                borderWidth: 1,
+                borderColor: getNoteSourceColor() + '40'
+              }}
+              color={getNoteSourceColor()}
+            />
+          </View>
+
           <View style={[styles.noteHeader, isGridView && styles.gridNoteHeader]}>
             <View style={styles.noteHeaderLeft}>
               <Avatar.Icon
@@ -136,6 +163,13 @@ const styles = StyleSheet.create({
     },
     noteContent: {
         padding: 16,
+        position: 'relative',
+    },
+    sourceTypeIndicator: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        zIndex: 1,
     },
     noteHeader: {
         flexDirection: 'row',

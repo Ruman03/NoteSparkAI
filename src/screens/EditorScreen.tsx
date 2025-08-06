@@ -71,6 +71,9 @@ export default function EditorScreen() {
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState(16);
   const [linkUrl, setLinkUrl] = useState('');
@@ -189,6 +192,43 @@ export default function EditorScreen() {
     }
   }, []);
 
+  // More menu actions
+  const executeBlockquote = useCallback(async () => {
+    setShowMoreMenu(false);
+    if (richText.current) {
+      richText.current.focusContentEditor();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      richText.current.sendAction(actions.blockquote, 'result');
+    }
+  }, []);
+
+  const executeHorizontalRule = useCallback(() => {
+    setShowMoreMenu(false);
+    insertHorizontalRule();
+  }, [insertHorizontalRule]);
+
+  // Network status helper
+  const getNetworkIcon = () => {
+    if (isSyncing) return 'cloud-sync';
+    if (isOnline) return 'cloud-check';
+    return 'cloud-off-outline';
+  };
+
+  const getNetworkColor = () => {
+    if (isSyncing) return theme.colors.primary;
+    if (isOnline) return theme.colors.primary;
+    return theme.colors.error;
+  };
+
+  const executeStrikethrough = useCallback(async () => {
+    setShowMoreMenu(false);
+    if (richText.current) {
+      richText.current.focusContentEditor();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      richText.current.sendAction(actions.setStrikethrough, 'result');
+    }
+  }, []);
+
   const setTextAlignment = useCallback(async (alignment: 'left' | 'center' | 'right' | 'justify') => {
     if (richText.current) {
       console.log(`${alignment} alignment button pressed - advanced approach`);
@@ -248,53 +288,64 @@ export default function EditorScreen() {
   const saveNoteContent = useCallback(async (content: string, noteIdToSave: string) => {
     if (!content || !isScreenFocused) return;
     
-    const notesService = NotesService.getInstance();
-    const user = auth().currentUser;
-    if (!user) {
-      throw new Error('No authenticated user found');
-    }
+    setIsSyncing(true); // Start syncing indicator
+    
+    try {
+      const notesService = NotesService.getInstance();
+      const user = auth().currentUser;
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
 
-    // Generate title if needed
-    let currentTitle = noteTitle;
-    if (shouldGenerateTitleRef.current && (noteTitle === 'New Note' || !noteTitle)) {
-      const aiService = AIService.getInstance();
+      // Generate title if needed
+      let currentTitle = noteTitle;
+      if (shouldGenerateTitleRef.current && (noteTitle === 'New Note' || !noteTitle)) {
+        const aiService = AIService.getInstance();
+        const textContent = content.replace(/<[^>]*>/g, '');
+        currentTitle = await aiService.generateNoteTitle(textContent);
+        setNoteTitle(currentTitle);
+        shouldGenerateTitleRef.current = false;
+      }
+
       const textContent = content.replace(/<[^>]*>/g, '');
-      currentTitle = await aiService.generateNoteTitle(textContent);
-      setNoteTitle(currentTitle);
-      shouldGenerateTitleRef.current = false;
+      const currentNoteId = routeNoteId || noteIdRef.current;
+
+      if (currentNoteId) {
+        // Update existing note
+        await notesService.updateNote(user.uid, currentNoteId, {
+          title: currentTitle,
+          content: content,
+          plainText: textContent,
+          tone,
+          originalText: originalText || '',
+          tags: [],
+          updatedAt: new Date()
+        });
+      } else {
+        // Create new note
+        const newNoteId = await notesService.saveNote(user.uid, {
+          title: currentTitle,
+          content: content,
+          plainText: textContent,
+          tone,
+          originalText: originalText || '',
+          tags: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        setNoteId(newNoteId);
+        noteIdRef.current = newNoteId;
+      }
+
+      setLastSaved(new Date());
+      setIsOnline(true); // Successful save indicates we're online
+    } catch (error) {
+      console.error('Save failed:', error);
+      setIsOnline(false); // Failed save might indicate network issues
+      throw error;
+    } finally {
+      setIsSyncing(false); // End syncing indicator
     }
-
-    const textContent = content.replace(/<[^>]*>/g, '');
-    const currentNoteId = routeNoteId || noteIdRef.current;
-
-    if (currentNoteId) {
-      // Update existing note
-      await notesService.updateNote(user.uid, currentNoteId, {
-        title: currentTitle,
-        content: content,
-        plainText: textContent,
-        tone,
-        originalText: originalText || '',
-        tags: [],
-        updatedAt: new Date()
-      });
-    } else {
-      // Create new note
-      const newNoteId = await notesService.saveNote(user.uid, {
-        title: currentTitle,
-        content: content,
-        plainText: textContent,
-        tone,
-        originalText: originalText || '',
-        tags: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-      setNoteId(newNoteId);
-      noteIdRef.current = newNoteId;
-    }
-
-    setLastSaved(new Date());
   }, [isScreenFocused, noteTitle, tone, originalText, routeNoteId]);
 
   // Adaptive auto-save hook integration
@@ -515,16 +566,24 @@ export default function EditorScreen() {
       {/* Enhanced status bar with adaptive auto-save info and word count */}
       <View style={[styles.statusBar, { backgroundColor: theme.colors.surfaceVariant }]}>
         <View style={styles.statusLeft}>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            {hasUnsavedChanges 
-              ? saveSettings.frequency === 'manual' 
-                ? 'Unsaved changes' 
-                : `Auto-saving (${saveSettings.frequency})`
-              : lastSaved 
-                ? `Saved ${lastSaved.toLocaleTimeString()}`
-                : 'Not saved'
-            }
-          </Text>
+          <View style={styles.statusSaveSection}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              {hasUnsavedChanges 
+                ? saveSettings.frequency === 'manual' 
+                  ? 'Unsaved changes' 
+                  : `Auto-saving (${saveSettings.frequency})`
+                : lastSaved 
+                  ? `Saved ${lastSaved.toLocaleTimeString()}`
+                  : 'Not saved'
+              }
+            </Text>
+            <IconButton
+              icon={getNetworkIcon()}
+              size={14}
+              iconColor={getNetworkColor()}
+              style={{ margin: 0, padding: 2, marginLeft: 8 }}
+            />
+          </View>
           {saveSettings.frequency === 'adaptive' && (
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
               Next save in {Math.ceil(getCurrentInterval() / 1000)}s
@@ -702,24 +761,6 @@ export default function EditorScreen() {
               style={[
                 styles.toolbarButton,
                 { backgroundColor: activeStyles.includes('underline') ? theme.colors.primaryContainer : 'transparent' }
-              ]}
-            />
-            <IconButton
-              icon="format-strikethrough"
-              size={20}
-              iconColor={activeStyles.includes('strikeThrough') ? theme.colors.primary : theme.colors.onSurface}
-              disabled={!isEditorReady}
-              onPress={async () => {
-                console.log('Strikethrough button pressed - advanced approach');
-                if (richText.current) {
-                  richText.current.focusContentEditor();
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  richText.current.sendAction(actions.setStrikethrough, 'result');
-                }
-              }}
-              style={[
-                styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('strikeThrough') ? theme.colors.primaryContainer : 'transparent' }
               ]}
             />
           </View>
@@ -950,31 +991,35 @@ export default function EditorScreen() {
               onPress={() => setShowLinkModal(true)}
               style={styles.toolbarButton}
             />
-            <IconButton
-              icon="minus"
-              size={20}
-              iconColor={theme.colors.onSurface}
-              onPress={insertHorizontalRule}
-              style={styles.toolbarButton}
-            />
-            <IconButton
-              icon="format-quote-close"
-              size={20}
-              iconColor={activeStyles.includes('quote') ? theme.colors.primary : theme.colors.onSurface}
-              disabled={!isEditorReady}
-              onPress={async () => {
-                console.log('Blockquote button pressed - advanced approach');
-                if (richText.current) {
-                  richText.current.focusContentEditor();
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  richText.current.sendAction(actions.blockquote, 'result');
-                }
-              }}
-              style={[
-                styles.toolbarButton,
-                { backgroundColor: activeStyles.includes('quote') ? theme.colors.primaryContainer : 'transparent' }
-              ]}
-            />
+            <Menu
+              visible={showMoreMenu}
+              onDismiss={() => setShowMoreMenu(false)}
+              anchor={
+                <IconButton
+                  icon="dots-horizontal"
+                  size={20}
+                  iconColor={theme.colors.onSurface}
+                  onPress={() => setShowMoreMenu(true)}
+                  style={styles.toolbarButton}
+                />
+              }
+            >
+              <Menu.Item 
+                onPress={executeBlockquote}
+                title="Blockquote"
+                leadingIcon="format-quote-close"
+              />
+              <Menu.Item 
+                onPress={executeHorizontalRule}
+                title="Horizontal Rule"
+                leadingIcon="minus"
+              />
+              <Menu.Item 
+                onPress={executeStrikethrough}
+                title="Strikethrough"
+                leadingIcon="format-strikethrough"
+              />
+            </Menu>
           </View>
           
           <Divider style={styles.toolbarDivider} />
@@ -1231,6 +1276,10 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'column',
     alignItems: 'flex-start',
+  },
+  statusSaveSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statusRight: {
     flexDirection: 'row',

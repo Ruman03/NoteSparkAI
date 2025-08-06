@@ -212,6 +212,15 @@ const AuthScreen: React.FC = () => {
                 {isLogin ? 'Sign in to continue' : 'Join NoteSpark AI today'}
               </Text>
 
+              {/* Social Proof */}
+              {!isLogin && (
+                <View style={styles.socialProofContainer}>
+                  <Text style={[styles.socialProofText, { color: theme.colors.primary }]}>
+                    ✨ Join 25,000+ users transforming their notes with AI
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.inputContainer}>
                 <TextInput
                   label="Email"
@@ -390,6 +399,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 32,
+  },
+  socialProofContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 16,
+  },
+  socialProofText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   inputContainer: {
     marginBottom: 16,
