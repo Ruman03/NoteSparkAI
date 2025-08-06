@@ -86,13 +86,23 @@ ${request.text}`;
       console.log('AIService: Sending request to Gemini 2.5 Flash...');
       const result = await this.model.generateContent(fullPrompt);
       const response = await result.response;
+      
+      // Add better debugging for response
+      console.log('AIService: Response received, checking content...');
+      console.log('AIService: Response candidates:', response.candidates?.length || 0);
+      
       let transformedText = response.text();
 
-      if (!transformedText) {
-        throw new Error('No content received from Gemini API');
+      if (!transformedText || transformedText.trim() === '') {
+        console.log('AIService: Empty response received from Gemini');
+        console.log('AIService: Response candidates:', JSON.stringify(response.candidates, null, 2));
+        
+        // Fallback: return the original text with basic formatting
+        transformedText = request.text.trim();
+        console.log('AIService: Using fallback - returning original text');
+      } else {
+        console.log('AIService: Received valid response from Gemini');
       }
-
-      console.log('AIService: Received response from Gemini');
 
       // Clean up the response - remove markdown code blocks if present
       transformedText = this.cleanupAIResponse(transformedText);

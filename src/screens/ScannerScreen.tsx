@@ -36,53 +36,41 @@ const ReviewSheet = ({ pages, onProcess, onAddPage, onClose, onDeletePage, isVis
 }) => {
   // Animation for smooth sheet entrance
   const sheetTranslateY = useSharedValue(500); // Start below screen
-  const sheetOpacity = useSharedValue(0);
   
-  // Handle pan gesture for swipe down to dismiss
-  const handlePanGesture = useCallback((translationY: number, velocityY: number) => {
-    'worklet';
-    
-    // If swiping down with sufficient distance or velocity, dismiss
-    if (translationY > 100 || velocityY > 500) {
-      sheetTranslateY.value = withTiming(500, { duration: 250, easing: Easing.in(Easing.cubic) });
-      sheetOpacity.value = withTiming(0, { duration: 200 });
-      runOnJS(onClose)();
-    } else {
-      // Snap back to position
-      sheetTranslateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
-      sheetOpacity.value = withTiming(1, { duration: 150 });
-    }
-  }, [onClose, sheetTranslateY, sheetOpacity]);
-
+  // Pan gesture for swipe down to dismiss - following official RNGH best practices
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
-      // Only allow downward movement
+      // Allow dragging down with natural resistance
       if (event.translationY > 0) {
-        sheetTranslateY.value = event.translationY;
-        // Fade out as user drags down
-        sheetOpacity.value = Math.max(0.3, 1 - (event.translationY / 300));
+        // Apply resistance to make the gesture feel natural
+        sheetTranslateY.value = event.translationY * 0.8;
       }
     })
     .onEnd((event) => {
-      runOnJS(handlePanGesture)(event.translationY, event.velocityY);
+      // Use standard threshold values recommended by official documentation
+      if (event.translationY > 100 || event.velocityY > 500) {
+        // Animate the sheet fully off-screen
+        sheetTranslateY.value = withTiming(500, { duration: 200 });
+        // Trigger the onClose function on the JS thread after animation starts
+        runOnJS(onClose)();
+      } else {
+        // If the swipe wasn't enough, animate back to open position
+        sheetTranslateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+      }
     });
   
   // Animate sheet when visibility changes
   React.useEffect(() => {
     if (isVisible) {
       sheetTranslateY.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
-      sheetOpacity.value = withTiming(1, { duration: 250 });
-    } else {
-      sheetTranslateY.value = withTiming(500, { duration: 250, easing: Easing.in(Easing.cubic) });
-      sheetOpacity.value = withTiming(0, { duration: 200 });
     }
-  }, [isVisible, sheetTranslateY, sheetOpacity]);
+  }, [isVisible, sheetTranslateY]);
 
   const animatedSheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: sheetTranslateY.value }],
-    opacity: sheetOpacity.value,
   }));
 
+  // Render null if not visible to prevent gesture conflicts
   if (!isVisible) return null;
 
   return (
@@ -623,11 +611,15 @@ const styles = StyleSheet.create({
   },
   thumbnailList: {
     paddingHorizontal: 8,
+    paddingTop: 8, // Add top padding to prevent delete button clipping
+    paddingBottom: 4,
   },
   thumbnailContainer: {
     marginHorizontal: 8,
     alignItems: 'center',
     position: 'relative',
+    paddingTop: 8, // Add padding to accommodate delete button
+    paddingHorizontal: 8, // Add horizontal padding for delete button
   },
   thumbnailImage: {
     width: 80,
@@ -642,8 +634,8 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     position: 'absolute',
-    top: -6,
-    right: -6,
+    top: -2, // Moved down slightly to be more visible
+    right: -2, // Moved in slightly to be more visible
     width: 20,
     height: 20,
     borderRadius: 10,
