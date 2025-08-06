@@ -19,6 +19,7 @@ import {
   Menu,
   Divider,
   TextInput,
+  Tooltip,
   Surface,
   Chip,
   Portal,
@@ -218,6 +219,12 @@ export default function EditorScreen() {
     if (isSyncing) return theme.colors.primary;
     if (isOnline) return theme.colors.primary;
     return theme.colors.error;
+  };
+
+  const getNetworkStatusMessage = () => {
+    if (isSyncing) return 'Syncing to cloud...';
+    if (isOnline) return 'Connected - Changes saved to cloud';
+    return 'Offline - Changes saved locally only';
   };
 
   const executeStrikethrough = useCallback(async () => {
@@ -577,12 +584,14 @@ export default function EditorScreen() {
                   : 'Not saved'
               }
             </Text>
-            <IconButton
-              icon={getNetworkIcon()}
-              size={14}
-              iconColor={getNetworkColor()}
-              style={{ margin: 0, padding: 2, marginLeft: 8 }}
-            />
+            <Tooltip title={getNetworkStatusMessage()}>
+              <IconButton
+                icon={getNetworkIcon()}
+                size={14}
+                iconColor={getNetworkColor()}
+                style={{ margin: 0, padding: 2, marginLeft: 8 }}
+              />
+            </Tooltip>
           </View>
           {saveSettings.frequency === 'adaptive' && (
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>

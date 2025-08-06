@@ -7,6 +7,12 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
 import { FlashList } from '@shopify/flash-list';
 import { 
   Text, 
@@ -47,6 +53,35 @@ export default function LibraryScreen() {
   const [showActionsModal, setShowActionsModal] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+
+  // Animation values for smooth transitions
+  const transitionProgress = useSharedValue(0); // 0 = list, 1 = grid
+
+  // Animated view mode change with smooth transition
+  const handleViewModeChange = useCallback(() => {
+    const newMode = viewMode === 'grid' ? 'list' : 'grid';
+    const targetValue = newMode === 'grid' ? 1 : 0;
+    
+    // Smooth transition animation
+    transitionProgress.value = withTiming(targetValue, { 
+      duration: 300 
+    });
+    
+    setViewMode(newMode);
+  }, [viewMode, transitionProgress]);
+
+  // Animated styles for container
+  const animatedContainerStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      transitionProgress.value,
+      [0, 0.5, 1],
+      [1, 0.95, 1]
+    );
+    
+    return {
+      opacity,
+    };
+  });
 
   const loadNotes = useCallback(async () => {
     const user = auth().currentUser;
@@ -200,25 +235,27 @@ export default function LibraryScreen() {
     }
 
     return (
-      <FlashList
-        data={filteredNotes}
-        renderItem={renderNoteCard}
-        keyExtractor={(item: Note) => item.id}
-        contentContainerStyle={styles.notesList}
-        showsVerticalScrollIndicator={false}
-        estimatedItemSize={viewMode === 'grid' ? 180 : 150}
-        numColumns={viewMode === 'grid' ? 2 : 1}
-        key={viewMode} // Re-render on viewMode change
-        refreshControl={
-          <RefreshControl 
-            refreshing={isRefreshing} 
-            onRefresh={handleRefresh}
-            colors={[theme.colors.primary]}
-            tintColor={theme.colors.primary}
-          />
-        }
-        ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 12 : 0 }} />}
-      />
+      <Animated.View style={[{ flex: 1 }, animatedContainerStyle]}>
+        <FlashList
+          data={filteredNotes}
+          renderItem={renderNoteCard}
+          keyExtractor={(item: Note) => item.id}
+          contentContainerStyle={styles.notesList}
+          showsVerticalScrollIndicator={false}
+          estimatedItemSize={viewMode === 'grid' ? 180 : 150}
+          numColumns={viewMode === 'grid' ? 2 : 1}
+          key={viewMode} // Re-render on viewMode change
+          refreshControl={
+            <RefreshControl 
+              refreshing={isRefreshing} 
+              onRefresh={handleRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 12 : 0 }} />}
+        />
+      </Animated.View>
     );
   };
 
@@ -231,7 +268,7 @@ export default function LibraryScreen() {
           selectedTone={selectedTone}
           onToneFilter={setSelectedTone}
           viewMode={viewMode}
-          onViewModeChange={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
+          onViewModeChange={handleViewModeChange}
           sortBy={sortBy}
           onSortChange={setSortBy}
           onRefresh={handleRefresh}

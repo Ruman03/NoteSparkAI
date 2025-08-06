@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, Flat
 import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import type { HomeScreenNavigationProp } from '../types/navigation';
 import type { Note } from '../types';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -218,10 +219,17 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Content preview */}
-          <Text variant="bodySmall" numberOfLines={3} style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}>
-            {getContentPreview(item)}
-          </Text>
+          {/* Content preview with fade-out gradient */}
+          <View style={styles.notePreviewContainer}>
+            <Text variant="bodySmall" numberOfLines={3} style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}>
+              {getContentPreview(item)}
+            </Text>
+            <LinearGradient
+              colors={[`${theme.colors.surface}00`, theme.colors.surface]}
+              style={styles.fadeGradient}
+              pointerEvents="none"
+            />
+          </View>
 
           {/* Footer with date */}
           <Text variant="labelSmall" style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}>
@@ -614,10 +622,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
+  notePreviewContainer: {
+    position: 'relative',
+    marginBottom: 12,
+  },
   notePreview: {
     lineHeight: 18,
-    marginBottom: 12,
     minHeight: 54, // 3 lines minimum
+  },
+  fadeGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 18, // Height of one line
   },
   noteDate: {
     fontSize: 12,
