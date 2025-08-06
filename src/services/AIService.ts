@@ -4,6 +4,7 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Config from 'react-native-config';
+import { GeminiVisionService } from './GeminiVisionService';
 
 interface TonePrompts {
   [key: string]: string;
@@ -18,6 +19,17 @@ interface AITransformationResponse {
   transformedText: string;
   title: string;
   wordCount: number;
+}
+
+interface DocumentProcessingRequest {
+  fileData: string; // base64 encoded file data
+  mimeType: string;
+  prompt: string;
+}
+
+interface DocumentProcessingResponse {
+  extractedContent: string;
+  title?: string;
 }
 
 const TONE_PROMPTS: TonePrompts = {
@@ -127,6 +139,10 @@ ${request.text}`;
   }
 
   // New method for multi-page batch processing
+  /**
+   * Transform multiple images to note using Gemini 2.5 Flash multimodal processing
+   * Enhanced with single API call for better performance and context understanding
+   */
   async transformImagesToNote(
     imageUris: string[], 
     tone: 'professional' | 'casual' | 'simplified',
@@ -141,96 +157,119 @@ ${request.text}`;
     }
 
     try {
-      console.log(`AIService: Processing ${imageUris.length} images with Gemini 2.5 Flash...`);
+      console.log(`AIService: Processing ${imageUris.length} images with Gemini 2.5 Flash multimodal...`);
       
+      // Initialize Gemini Vision Service
+      const geminiVision = GeminiVisionService.getInstance();
+      if (!geminiVision.isConfigured()) {
+        geminiVision.setGeminiModel(this.model);
+      }
+
+      // Report initial progress
+      if (onProgress) {
+        onProgress(1, 2); // Step 1: Processing images
+      }
+
       let combinedText = '';
-      const pageTexts: string[] = [];
-      
-      // Process images sequentially to avoid API rate limits
-      for (let i = 0; i < imageUris.length; i++) {
-        const imageUri = imageUris[i];
+
+      if (imageUris.length === 1) {
+        // Single image processing
+        console.log('AIService: Processing single image...');
+        const result = await geminiVision.extractTextFromImage(imageUris[0], {
+          preserveLayout: true,
+          extractTables: true,
+          enhanceHandwriting: true,
+          detectLanguages: true,
+          analyzeStructure: true
+        });
+        combinedText = result.text;
         
-        // Report progress
-        if (onProgress) {
-          onProgress(i + 1, imageUris.length);
-        }
-        
-        console.log(`AIService: Processing page ${i + 1}/${imageUris.length}`);
-        
-        try {
-          // Use the existing OCR processing (via VisionService or ML Kit)
-          // This would need to be extracted from ScannerScreen into a shared service
-          const pageText = await this.extractTextFromImage(imageUri);
-          
-          if (pageText && pageText.trim()) {
-            pageTexts.push(pageText.trim());
-            console.log(`AIService: Extracted ${pageText.length} characters from page ${i + 1}`);
-          } else {
-            console.warn(`AIService: No text extracted from page ${i + 1}`);
-          }
-          
-          // Add small delay to respect API rate limits
-          if (i < imageUris.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        } catch (pageError) {
-          console.error(`AIService: Error processing page ${i + 1}:`, pageError);
-          // Continue with other pages even if one fails
-        }
+      } else {
+        // Multi-image processing - let Gemini handle all images in one call
+        console.log(`AIService: Processing ${imageUris.length} images as multi-page document...`);
+        const result = await geminiVision.processMultipleImages(imageUris, {
+          preserveLayout: true,
+          extractTables: true,
+          enhanceHandwriting: true,
+          detectLanguages: true,
+          analyzeStructure: true,
+          combinePages: true,
+          preservePageBreaks: true
+        });
+        combinedText = result.text;
       }
-      
-      if (pageTexts.length === 0) {
-        throw new Error('No text could be extracted from any of the provided images');
+
+      if (!combinedText || combinedText.trim().length === 0) {
+        throw new Error('No text could be extracted from the provided images');
       }
+
+      console.log(`AIService: Successfully extracted ${combinedText.length} characters from ${imageUris.length} image(s)`);
       
-      // Combine all page texts with proper formatting
-      combinedText = this.combinePageTexts(pageTexts);
-      
-      console.log(`AIService: Combined text from ${pageTexts.length} pages (${combinedText.length} characters)`);
-      
-      // Transform the combined text using Gemini
+      // Report progress before transformation
+      if (onProgress) {
+        onProgress(2, 2); // Step 2: Transforming text
+      }
+
+      // Transform the extracted text using tone-specific prompts
       const transformationRequest: AITransformationRequest = {
         text: combinedText,
         tone
       };
+
+      const transformedResult = await this.transformTextToNote(transformationRequest);
       
-      return await this.transformTextToNote(transformationRequest);
+      console.log('AIService: Multi-image processing completed successfully');
+      return transformedResult;
       
     } catch (error) {
       console.error('AIService: Error in transformImagesToNote:', error);
       if (error instanceof Error) {
-        throw new Error(`Multi-page processing error: ${error.message}`);
+        throw new Error(`Multi-image processing error: ${error.message}`);
       }
       throw new Error('Failed to process multiple images');
     }
   }
 
   // Helper method to extract text from a single image
+  /**
+   * Extract text from image using Gemini 2.5 Flash multimodal capabilities
+   * Replaces ML Kit and Google Cloud Vision with superior AI processing
+   */
   private async extractTextFromImage(imageUri: string): Promise<string> {
-    // This is a placeholder - in the actual implementation, this would use
-    // the same OCR logic from ScannerScreen (VisionService + ML Kit fallback)
-    // For now, we'll import and use the existing services
     try {
-      // Import VisionService dynamically to avoid circular dependencies
-      const VisionService = (await import('./VisionService')).default;
-      const textRecognition = (await import('@react-native-ml-kit/text-recognition')).default;
+      console.log('AIService: Extracting text from image using Gemini 2.5 Flash...');
       
-      const visionService = VisionService.getInstance();
-      
-      // Try Google Cloud Vision first (highest accuracy)
-      if (visionService.isConfigured()) {
-        const visionResult = await visionService.extractTextFromImage(imageUri);
-        if (visionResult && visionResult.text && visionResult.text.trim().length > 5) {
-          return visionResult.text;
+      // Initialize Gemini Vision Service
+      const geminiVision = GeminiVisionService.getInstance();
+      if (!geminiVision.isConfigured()) {
+        // Set the Gemini model from this service
+        if (!this.model) {
+          throw new Error('Gemini model not initialized');
         }
+        geminiVision.setGeminiModel(this.model);
       }
-      
-      // Fallback to ML Kit
-      const ocrResult = await textRecognition.recognize(imageUri);
-      return ocrResult?.text || '';
-      
+
+      // Extract text using Gemini's advanced vision capabilities
+      const result = await geminiVision.extractTextFromImage(imageUri, {
+        preserveLayout: true,
+        extractTables: true,
+        enhanceHandwriting: true,
+        detectLanguages: true,
+        analyzeStructure: true
+      });
+
+      if (result.text && result.text.trim().length > 0) {
+        console.log(`AIService: Successfully extracted ${result.text.length} characters from image`);
+        console.log(`AIService: Document type detected: ${result.metadata.documentType}`);
+        return result.text;
+      } else {
+        console.warn('AIService: No text extracted from image');
+        return '';
+      }
+
     } catch (error) {
-      console.error('AIService: Error extracting text from image:', error);
+      console.error('AIService: Error extracting text from image with Gemini:', error);
+      // Return empty string instead of throwing to maintain backward compatibility
       return '';
     }
   }
@@ -249,15 +288,17 @@ ${request.text}`;
       .join('');
   }
 
-  // New method for document processing
+  // Enhanced method for document processing with optional native file processing
   async processDocumentToNote(
-    extractedText: string,
+    textOrFilePath: string,
     documentType: string,
     tone: 'professional' | 'casual' | 'simplified',
     options: {
       preserveStructure?: boolean;
       generateSummary?: boolean;
       autoTag?: boolean;
+      isFilePath?: boolean; // New option to indicate if input is a file path
+      useNativeProcessing?: boolean; // New option to use Gemini native processing
     } = {}
   ): Promise<AITransformationResponse> {
     if (!this.apiKey || !this.model) {
@@ -266,6 +307,55 @@ ${request.text}`;
 
     try {
       console.log(`AIService: Processing ${documentType} document with Gemini 2.5 Flash...`);
+      
+      let extractedText: string;
+      let useNativeGeminiProcessing = false;
+      
+      // Determine if we should use native Gemini processing
+      if (options.isFilePath && options.useNativeProcessing) {
+        try {
+          // Import DocumentProcessor for file handling
+          const { DocumentProcessor } = await import('../services/DocumentProcessor');
+          const documentProcessor = new DocumentProcessor();
+          
+          // Create DocumentFile object from file path
+          const fileName = textOrFilePath.split('/').pop() || 'document';
+          const documentFile = {
+            uri: textOrFilePath,
+            name: fileName,
+            type: documentType,
+            size: 0 // Size not available when using file path, but required by interface
+          };
+          
+          // Process document using DocumentProcessor which has Gemini integration
+          const processingResult = await documentProcessor.processDocument(documentFile, {
+            extractImages: false,
+            preserveFormatting: options.preserveStructure || false,
+            autoTagging: options.autoTag || false,
+            generateSummary: options.generateSummary || false,
+            chunkLargeDocuments: false
+          });
+          
+          if (processingResult.extractedText && processingResult.extractedText.includes('GEMINI_PROCESSING_MARKER')) {
+            // Native Gemini processing was used
+            extractedText = processingResult.extractedText.replace('GEMINI_PROCESSING_MARKER: ', '');
+            useNativeGeminiProcessing = true;
+            console.log('AIService: Successfully used native Gemini document processing via DocumentProcessor');
+          } else {
+            // Regular text extraction was used
+            extractedText = processingResult.extractedText;
+            console.log('AIService: Used regular text extraction as fallback');
+          }
+          
+        } catch (nativeError) {
+          console.warn('AIService: Document processing failed, falling back to provided text:', nativeError);
+          // Fall back to text extraction approach
+          extractedText = textOrFilePath; // This should be extracted text as fallback
+        }
+      } else {
+        // Use provided text (either extracted text or file path treated as text)
+        extractedText = textOrFilePath;
+      }
       
       // Enhanced prompts based on document type
       const documentPrompts: { [key: string]: string } = {
@@ -491,6 +581,80 @@ Content: ${content.substring(0, 1000)}`;
       return false;
     }
   }
+
+  /**
+   * Process documents using Gemini 2.5 Flash native multimodal capabilities
+   */
+  async processDocumentWithGemini(request: DocumentProcessingRequest): Promise<DocumentProcessingResponse> {
+    if (!this.apiKey || !this.model) {
+      throw new Error('Gemini API key is not configured. Please check your environment setup.');
+    }
+
+    try {
+      console.log(`AIService: Processing document with Gemini 2.5 Flash (${request.mimeType})`);
+
+      // Prepare the file data for Gemini API
+      const fileData = {
+        inlineData: {
+          data: request.fileData,
+          mimeType: request.mimeType
+        }
+      };
+
+      // Create the request with both file and prompt
+      const contents = [
+        {
+          role: 'user',
+          parts: [
+            fileData,
+            { text: request.prompt }
+          ]
+        }
+      ];
+
+      // Use Gemini's document understanding capabilities
+      const result = await this.model.generateContent({
+        contents,
+        generationConfig: {
+          temperature: 0.3, // Lower temperature for more accurate extraction
+          topP: 0.9,
+          topK: 40,
+          maxOutputTokens: 8000, // Higher limit for document content
+        }
+      });
+
+      const response = await result.response;
+      const extractedContent = response.text();
+
+      if (!extractedContent || extractedContent.trim() === '') {
+        throw new Error('No content extracted from document');
+      }
+
+      // Generate a title from the content
+      const title = await this.generateNoteTitle(extractedContent);
+
+      console.log('AIService: Document processed successfully via Gemini 2.5 Flash');
+      
+      return {
+        extractedContent: this.cleanupAIResponse(extractedContent),
+        title
+      };
+
+    } catch (error) {
+      console.error('AIService: Document processing failed:', error);
+      
+      // Provide specific error messages for common issues
+      if (error instanceof Error) {
+        if (error.message.includes('quota') || error.message.includes('limit')) {
+          throw new Error('API quota exceeded. Please try again later.');
+        } else if (error.message.includes('invalid') || error.message.includes('unsupported')) {
+          throw new Error('Document format not supported or file is corrupted.');
+        }
+      }
+      
+      throw new Error(`Document processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 }
 
-export { AIService, type AITransformationRequest, type AITransformationResponse };
+export { AIService, type AITransformationRequest, type AITransformationResponse, type DocumentProcessingRequest, type DocumentProcessingResponse };

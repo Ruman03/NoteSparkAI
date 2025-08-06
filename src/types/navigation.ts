@@ -25,6 +25,8 @@ export type RootStackParamList = {
     tone: 'professional' | 'casual' | 'simplified';
     originalText?: string;
     noteTitle?: string;
+    folderId?: string | null;
+    folderName?: string;
   };
   VersionHistory: {
     noteId: string;
@@ -42,6 +44,7 @@ export type MainTabParamList = {
   Home: undefined;
   Scanner: undefined;
   Library: undefined;
+  Settings: undefined;
 };
 
 // Combined Navigation Props
@@ -57,6 +60,11 @@ export type ScannerScreenNavigationProp = CompositeNavigationProp<
 
 export type LibraryScreenNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Library'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+export type SettingsScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Settings'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 

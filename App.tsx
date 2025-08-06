@@ -10,18 +10,23 @@ import { ActivityIndicator, View, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AppIcon from './src/components/AppIcon';
 
-// Firebase Authentication
+// Firebase Authentication and Settings
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { SettingsProvider } from './src/contexts/SettingsContext';
+import { FolderProvider } from './src/contexts/FolderContext';
 
 // Import screens
 import HomeScreen from './src/screens/HomeScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 import ToneSelectionScreen from './src/screens/ToneSelectionScreen';
 import EditorScreen from './src/screens/EditorScreen';
-import LibraryScreen from './src/screens/LibraryScreen';
+import LibraryScreen from './src/screens/EnhancedLibraryScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import VersionHistoryScreen from './src/screens/VersionHistoryScreen';
 import VersionPreviewScreen from './src/screens/VersionPreviewScreen';
+import DocumentUploadScreen from './src/screens/DocumentUploadScreen';
+import DocumentPreviewScreen from './src/screens/DocumentPreviewScreen';
 
 // Custom NoteSpark AI Theme
 const noteSparkLightColors = {
@@ -85,26 +90,11 @@ export type RootTabParamList = {
   Home: undefined;
   Scanner: undefined;
   Library: undefined;
+  Settings: undefined;
 };
 
-export type RootStackParamList = {
-  MainTabs: undefined;
-  ToneSelection: { scannedText: string };
-  Editor: { 
-    originalText: string; 
-    tone: string;
-    enhancedText?: string;
-  };
-  VersionHistory: {
-    noteId: string;
-    noteTitle: string;
-  };
-  VersionPreview: {
-    noteId: string;
-    versionId: string;
-    noteTitle: string;
-  };
-};
+// Import navigation types from the dedicated types file
+import type { RootStackParamList } from './src/types/navigation';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -128,6 +118,9 @@ function MainTabs() {
               break;
             case 'Library':
               iconName = 'library';
+              break;
+            case 'Settings':
+              iconName = 'account-cog';
               break;
             default:
               iconName = 'default';
@@ -178,6 +171,11 @@ function MainTabs() {
         component={LibraryScreen}
         options={{ title: 'My Notes' }}
       />
+      <Tab.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{ title: 'Settings' }}
+      />
     </Tab.Navigator>
   );
 }
@@ -204,6 +202,23 @@ function AppNavigator() {
         name="MainTabs" 
         component={MainTabs}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="DocumentUploadScreen" 
+        component={DocumentUploadScreen}
+        options={{ 
+          title: 'Upload Document',
+          presentation: 'modal',
+          headerTitleAlign: 'center',
+        }}
+      />
+      <Stack.Screen 
+        name="DocumentPreview" 
+        component={DocumentPreviewScreen}
+        options={{ 
+          title: 'Document Preview',
+          headerTitleAlign: 'center',
+        }}
       />
       <Stack.Screen 
         name="ToneSelection" 
@@ -289,7 +304,11 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <PaperProvider theme={paperTheme}>
         <AuthProvider>
-          <AppContent />
+          <SettingsProvider>
+            <FolderProvider>
+              <AppContent />
+            </FolderProvider>
+          </SettingsProvider>
         </AuthProvider>
       </PaperProvider>
     </GestureHandlerRootView>

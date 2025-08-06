@@ -172,6 +172,11 @@ export default function HomeScreen() {
     }
   };
 
+  const handleDocumentUpload = () => {
+    hapticService.medium();
+    navigation.navigate('DocumentUploadScreen');
+  };
+
   const handleNotePress = (note: Note) => {
     hapticService.light();
     const parentNavigation = navigation.getParent();
@@ -452,6 +457,30 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </Surface>
 
+            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
+              <TouchableOpacity style={styles.actionContent} onPress={handleDocumentUpload}>
+                <Icon 
+                  name="file-upload" 
+                  size={48} 
+                  color={theme.colors.onSecondaryContainer} 
+                  style={styles.actionIcon}
+                />
+                <View style={styles.actionText}>
+                  <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer, fontWeight: 'bold' }}>
+                    Upload Document
+                  </Text>
+                  <Text variant="bodyMedium" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8 }}>
+                    Import PDF, Word, or text files
+                  </Text>
+                </View>
+                <Icon 
+                  name="chevron-right" 
+                  size={24} 
+                  color={theme.colors.onSecondaryContainer} 
+                />
+              </TouchableOpacity>
+            </Surface>
+
             <Surface style={[styles.actionCard, { backgroundColor: theme.colors.tertiaryContainer }]} elevation={2}>
               <TouchableOpacity style={styles.actionContent} onPress={handleCreateBlankNote}>
                 <Icon 
@@ -489,7 +518,7 @@ export default function HomeScreen() {
                     View Library
                   </Text>
                   <Text variant="bodyMedium" style={{ color: theme.colors.onErrorContainer, opacity: 0.8 }}>
-                    Browse all your notes
+                    Browse all your notes and folders
                   </Text>
                 </View>
                 <Icon 

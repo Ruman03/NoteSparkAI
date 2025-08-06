@@ -12,8 +12,10 @@ export interface Note {
   createdAt: Date;
   updatedAt: Date;
   userId: string;
+  createdBy: string; // For compatibility with FolderService
   tags: string[];
   isStarred: boolean;
+  folderId?: string | null; // Folder assignment for organization
   sourceImageUrl?: string; // Original scanned document image
   originalText?: string; // Original text before AI transformation
 }
@@ -386,8 +388,8 @@ export interface UploadSession {
   progress: DocumentUploadProgress;
   result?: DocumentProcessingResult;
   error?: string;
-  startedAt: Date;
-  completedAt?: Date;
+  startedAt: string; // Use ISO string instead of Date for navigation serialization
+  completedAt?: string; // Use ISO string instead of Date for navigation serialization
 }
 
 // Utility types

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import { Surface, Button, Text, useTheme, Card, ActivityIndicator } from 'react-native-paper';
+import { Surface, Button, Text, useTheme, Card, ActivityIndicator, IconButton } from 'react-native-paper';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -8,6 +8,7 @@ import type { ToneSelectionScreenNavigationProp, RootStackParamList } from '../t
 import { AIService } from '../services/AIService';
 import { hapticService } from '../services/HapticService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import FolderSelector from '../components/FolderSelector';
 
 const { width } = Dimensions.get('window');
 
@@ -64,10 +65,19 @@ export default function ToneSelectionScreen() {
 
   const [selectedTone, setSelectedTone] = useState<'professional' | 'casual' | 'simplified' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showFolderSelector, setShowFolderSelector] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedFolderName, setSelectedFolderName] = useState<string>('Inbox');
 
   const handleToneSelect = (toneId: 'professional' | 'casual' | 'simplified') => {
     hapticService.light();
     setSelectedTone(toneId);
+  };
+
+  const handleFolderSelected = (folderId: string | null, folderName?: string) => {
+    setSelectedFolderId(folderId);
+    setSelectedFolderName(folderName || 'Inbox');
+    hapticService.light();
   };
 
   const handleContinue = async () => {
@@ -120,7 +130,9 @@ export default function ToneSelectionScreen() {
         noteText: noteText,
         tone: selectedTone,
         originalText: originalText,
-        noteTitle: result.title
+        noteTitle: result.title,
+        folderId: selectedFolderId,
+        folderName: selectedFolderName
       });
     } catch (error) {
       console.error('Failed to transform text:', error);
@@ -131,7 +143,9 @@ export default function ToneSelectionScreen() {
       navigation.navigate('Editor', {
         noteText: fallbackText,
         tone: selectedTone,
-        originalText: fallbackText
+        originalText: fallbackText,
+        folderId: selectedFolderId,
+        folderName: selectedFolderName
       });
     } finally {
       setIsProcessing(false);
@@ -248,6 +262,22 @@ export default function ToneSelectionScreen() {
       </ScrollView>
 
       <Surface style={[styles.bottomContainer, { backgroundColor: theme.colors.surface }]} elevation={4}>
+        {/* Folder Selection */}
+        <View style={styles.folderSelectionContainer}>
+          <Text variant="labelMedium" style={[styles.folderLabel, { color: theme.colors.onSurfaceVariant }]}>
+            Save to folder:
+          </Text>
+          <Button
+            mode="outlined"
+            icon={selectedFolderId ? 'folder' : 'inbox'}
+            onPress={() => setShowFolderSelector(true)}
+            style={styles.folderButton}
+            contentStyle={styles.folderButtonContent}
+          >
+            {selectedFolderName}
+          </Button>
+        </View>
+
         <Button
           mode="contained"
           onPress={handleContinue}
@@ -259,6 +289,15 @@ export default function ToneSelectionScreen() {
           {isProcessing ? 'Transforming...' : 'Continue'}
         </Button>
       </Surface>
+
+      {/* Folder Selector Modal */}
+      <FolderSelector
+        visible={showFolderSelector}
+        onDismiss={() => setShowFolderSelector(false)}
+        onFolderSelected={handleFolderSelected}
+        selectedFolderId={selectedFolderId}
+        title="Select Folder for Note"
+      />
     </SafeAreaView>
   );
 }
@@ -357,6 +396,20 @@ const styles = StyleSheet.create({
     padding: 24,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+  },
+  folderSelectionContainer: {
+    marginBottom: 16,
+  },
+  folderLabel: {
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  folderButton: {
+    marginBottom: 16,
+  },
+  folderButtonContent: {
+    paddingVertical: 4,
   },
   continueButton: {
     paddingVertical: 4,

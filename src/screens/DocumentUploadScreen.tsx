@@ -126,7 +126,7 @@ export default function DocumentUploadScreen() {
         percentage: 0,
         message: 'Starting upload...'
       },
-      startedAt: new Date()
+      startedAt: new Date().toISOString() // Use ISO string for serialization
     }));
 
     setUploadSessions(prev => [...prev, ...newSessions]);
@@ -153,7 +153,7 @@ export default function DocumentUploadScreen() {
             ? { 
                 ...s, 
                 result, 
-                completedAt: new Date(),
+                completedAt: new Date().toISOString(), // Use ISO string for serialization
                 progress: {
                   phase: 'complete',
                   percentage: 100,
@@ -165,7 +165,7 @@ export default function DocumentUploadScreen() {
 
         // Navigate to preview after a short delay
         setTimeout(() => {
-          const completedSession = { ...session, result, completedAt: new Date() };
+          const completedSession = { ...session, result, completedAt: new Date().toISOString() }; // Use ISO string for serialization
           navigation.navigate('DocumentPreview', { uploadSession: completedSession });
         }, 1000);
 

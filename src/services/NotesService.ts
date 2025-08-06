@@ -23,6 +23,7 @@ interface CreateNoteRequest {
   tone: 'professional' | 'casual' | 'simplified';
   originalText: string;
   tags: string[];
+  folderId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   sourceImageUrl?: string;
@@ -52,6 +53,7 @@ export class NotesService {
       const note: Omit<Note, 'id'> = {
         ...noteData,
         userId,
+        createdBy: userId, // For compatibility with FolderService
         wordCount: noteData.plainText.split(' ').length,
         isStarred: false,
       };

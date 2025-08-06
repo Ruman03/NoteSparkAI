@@ -50,6 +50,7 @@ const iconMap: { [key: string]: { library: 'MaterialCommunityIcons' | 'MaterialI
   'up': { library: 'MaterialCommunityIcons', name: 'arrow-up' },
   'down': { library: 'MaterialCommunityIcons', name: 'arrow-down' },
   'settings': { library: 'MaterialCommunityIcons', name: 'cog' },
+  'account-cog': { library: 'MaterialCommunityIcons', name: 'account-cog' },
   'profile': { library: 'MaterialCommunityIcons', name: 'account' },
   'logout': { library: 'MaterialCommunityIcons', name: 'logout' },
   'refresh': { library: 'MaterialCommunityIcons', name: 'refresh' },

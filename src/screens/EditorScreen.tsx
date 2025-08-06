@@ -33,6 +33,7 @@ import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
 import { useAutoSaveWithVersioning } from '../hooks/useAutoSaveWithVersioning';
 import VoiceInput from '../components/voice/VoiceInput';
+import FolderSelector from '../components/FolderSelector';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
 import auth from '@react-native-firebase/auth';
 
@@ -65,6 +66,11 @@ export default function EditorScreen() {
   
   // Track editor initialization state
   const [isEditorReady, setIsEditorReady] = useState(false);
+  
+  // Folder selection state
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedFolderName, setSelectedFolderName] = useState<string>('Inbox');
+  const [showFolderSelector, setShowFolderSelector] = useState(false);
   
   // Advanced editor states
   const [showFontMenu, setShowFontMenu] = useState(false);
@@ -287,7 +293,15 @@ export default function EditorScreen() {
     }
   }, [initialContent]); // Re-register when content is loaded
 
-  const { noteId: routeNoteId, noteText, tone, originalText, noteTitle: routeNoteTitle } = route.params;
+  const { 
+    noteId: routeNoteId, 
+    noteText, 
+    tone, 
+    originalText, 
+    noteTitle: routeNoteTitle,
+    folderId: routeFolderId,
+    folderName: routeFolderName
+  } = route.params;
 
   // Enhanced save function for adaptive auto-save
   const saveNoteContent = useCallback(async (content: string, noteIdToSave: string) => {
@@ -324,6 +338,7 @@ export default function EditorScreen() {
           tone,
           originalText: originalText || '',
           tags: [],
+          folderId: selectedFolderId,
           updatedAt: new Date()
         });
       } else {
@@ -335,6 +350,7 @@ export default function EditorScreen() {
           tone,
           originalText: originalText || '',
           tags: [],
+          folderId: selectedFolderId,
           createdAt: new Date(),
           updatedAt: new Date()
         });
@@ -390,6 +406,18 @@ export default function EditorScreen() {
       console.log('EditorScreen: Setting noteTitle from route params:', routeNoteTitle);
     }
   }, [routeNoteTitle, noteTitle]);
+
+  // Initialize folder selection from route parameters
+  useEffect(() => {
+    if (routeFolderId !== undefined) {
+      setSelectedFolderId(routeFolderId);
+      console.log('EditorScreen: Setting selectedFolderId from route params:', routeFolderId);
+    }
+    if (routeFolderName) {
+      setSelectedFolderName(routeFolderName);
+      console.log('EditorScreen: Setting selectedFolderName from route params:', routeFolderName);
+    }
+  }, [routeFolderId, routeFolderName]);
 
   // Update ref when noteId changes
   useEffect(() => {
@@ -540,6 +568,13 @@ export default function EditorScreen() {
     }
   };
 
+  // Folder selection handlers
+  const handleFolderSelected = useCallback((folderId: string | null, folderName?: string) => {
+    setSelectedFolderId(folderId);
+    setSelectedFolderName(folderName || 'Inbox');
+    hapticService.light();
+  }, []);
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -552,6 +587,7 @@ export default function EditorScreen() {
   }
 
   return (
+    <>
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -581,6 +617,18 @@ export default function EditorScreen() {
           Save
         </Button>
       </Appbar.Header>
+
+      {/* Folder Selection */}
+      <View style={[styles.folderSection, { backgroundColor: theme.colors.surface }]}>
+        <Chip
+          icon={selectedFolderId ? 'folder' : 'inbox'}
+          onPress={() => setShowFolderSelector(true)}
+          style={[styles.folderChip, { backgroundColor: theme.colors.primaryContainer }]}
+          textStyle={{ color: theme.colors.onPrimaryContainer }}
+        >
+          📁 {selectedFolderName}
+        </Chip>
+      </View>
 
       {/* Enhanced status bar with version tracking and word count */}
       <View style={[styles.statusBar, { backgroundColor: theme.colors.surfaceVariant }]}>
@@ -1214,6 +1262,16 @@ export default function EditorScreen() {
         </View>
       )}
     </KeyboardAvoidingView>
+
+    {/* Folder Selector Modal */}
+    <FolderSelector
+      visible={showFolderSelector}
+      onDismiss={() => setShowFolderSelector(false)}
+      onFolderSelected={handleFolderSelected}
+      selectedFolderId={selectedFolderId}
+      title="Select Folder for Note"
+    />
+    </>
   );
 }
 
@@ -1396,5 +1454,14 @@ const styles = StyleSheet.create({
   selectedColor: {
     borderColor: '#333',
     borderWidth: 3,
+  },
+  folderSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  folderChip: {
+    alignSelf: 'flex-start',
   },
 });
