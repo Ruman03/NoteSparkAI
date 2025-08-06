@@ -1,59 +1,196 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Notes collection security rules
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isValidTimestamp(ts) {
+      return ts is timestamp && 
+             ts <= request.time;
+    }
+    
+    function isValidString(text, minLen, maxLen) {
+      return text is string && 
+             text.size() >= minLen && 
+             text.size() <= maxLen;
+    }
+    
+    // ========================================
+    // NOTES COLLECTION RULES
+    // ========================================
+    
     match /notes/{noteId} {
-      // Users can only read, write, update, and delete their own notes
-      allow read, write, update, delete: if request.auth != null 
-        && request.auth.uid == resource.data.userId;
+      // Read: Users can only read their own notes
+      allow read: if isSignedIn() && 
+                     (resource.data.userId == request.auth.uid || 
+                      resource.data.createdBy == request.auth.uid);
       
-      // Allow create if user is authenticated and sets correct userId
-      allow create: if request.auth != null 
-        && request.auth.uid == request.resource.data.userId
-        && validateNoteData(request.resource.data);
+      // Write/Update: Users can only modify their own notes
+      allow write, update, delete: if isSignedIn() && 
+                                      (resource.data.userId == request.auth.uid || 
+                                       resource.data.createdBy == request.auth.uid);
+      
+      // Create: Users can create notes they own
+      allow create: if isSignedIn() && 
+                       (request.resource.data.userId == request.auth.uid || 
+                        request.resource.data.createdBy == request.auth.uid) &&
+                       validateNoteData(request.resource.data);
 
       // Subcollection: Note Versions
       match /versions/{versionId} {
         // Users can only access versions of their own notes
-        allow read, write, delete: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/notes/$(noteId)).data.userId;
+        allow read, write, delete: if isSignedIn() && 
+                                      get(/databases/$(database)/documents/notes/$(noteId)).data.get('userId', get(/databases/$(database)/documents/notes/$(noteId)).data.get('createdBy', '')) == request.auth.uid;
         
-        // Allow create version if user owns the parent note and provides valid data
-        allow create: if request.auth != null 
-          && request.auth.uid == get(/databases/$(database)/documents/notes/$(noteId)).data.userId
-          && request.auth.uid == request.resource.data.userId
-          && validateVersionData(request.resource.data);
+        // Create version
+        allow create: if isSignedIn() && 
+                         get(/databases/$(database)/documents/notes/$(noteId)).data.get('userId', get(/databases/$(database)/documents/notes/$(noteId)).data.get('createdBy', '')) == request.auth.uid &&
+                         (request.resource.data.userId == request.auth.uid || 
+                          request.resource.data.createdBy == request.auth.uid) &&
+                         validateVersionData(request.resource.data);
       }
+    }
+
+    // ========================================
+    // FOLDERS COLLECTION RULES
+    // ========================================
+    
+    match /folders/{folderId} {
+      // Read: Users can only read their own folders
+      allow read: if isSignedIn() && 
+                     resource.data.createdBy == request.auth.uid;
+      
+      // Create: Users can create folders they own
+      allow create: if isSignedIn() && 
+                       request.resource.data.createdBy == request.auth.uid &&
+                       validateFolderData(request.resource.data);
+      
+      // Update: Users can only update their own folders
+      allow update: if isSignedIn() && 
+                       resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       validateFolderData(request.resource.data);
+      
+      // Delete: Users can only delete their own folders (except system folders)
+      allow delete: if isSignedIn() && 
+                       resource.data.createdBy == request.auth.uid &&
+                       !resource.data.get('isDefault', false);
     }
 
     // Flat Note Versions collection (alternative structure - keeping for compatibility)
     match /noteVersions/{versionId} {
       // Users can only read, write, and delete their own note versions
-      allow read, write, delete: if request.auth != null 
-        && request.auth.uid == resource.data.userId;
+      allow read, write, delete: if isSignedIn() && 
+                                    (resource.data.userId == request.auth.uid ||
+                                     resource.data.createdBy == request.auth.uid);
       
       // Allow create if user is authenticated and sets correct userId
-      allow create: if request.auth != null 
-        && request.auth.uid == request.resource.data.userId
-        && validateVersionData(request.resource.data);
+      allow create: if isSignedIn() && 
+                       (request.resource.data.userId == request.auth.uid ||
+                        request.resource.data.createdBy == request.auth.uid) &&
+                       validateVersionData(request.resource.data);
     }
     
-    // User profiles collection
+    // ========================================
+    // USERS COLLECTION RULES
+    // ========================================
+    
     match /users/{userId} {
       // Users can only access their own profile
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
       
       // Validate user profile data
-      allow create, update: if request.auth != null 
-        && request.auth.uid == userId
-        && validateUserData(request.resource.data);
+      allow create, update: if isOwner(userId) &&
+                               validateUserData(request.resource.data);
+      
+      // User settings subcollection
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User analytics subcollection
+      match /analytics/{analyticsId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
-    // System collections (read-only for users)
-    match /analytics/{document} {
-      allow read: if request.auth != null;
-      allow write: if false; // Only system/admin can write analytics
+    // ========================================
+    // ANALYTICS COLLECTION RULES
+    // ========================================
+    
+    match /analytics/{analyticsId} {
+      // Users can read their own analytics
+      allow read: if isSignedIn() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Users can create their own analytics
+      allow create: if isSignedIn() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       validateAnalyticsData(request.resource.data);
+      
+      // Analytics are generally immutable
+      allow update: if false;
+      
+      // Users can delete their own analytics
+      allow delete: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
     }
+    
+    // ========================================
+    // SUBSCRIPTIONS COLLECTION RULES
+    // ========================================
+    
+    match /subscriptions/{subscriptionId} {
+      // Users can read their own subscription
+      allow read: if isSignedIn() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Users can create/update their own subscription
+      allow create, update: if isSignedIn() && 
+                               request.resource.data.userId == request.auth.uid &&
+                               validateSubscriptionData(request.resource.data);
+      
+      // Users can delete their own subscription
+      allow delete: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // ========================================
+    // FEEDBACK COLLECTION RULES
+    // ========================================
+    
+    match /feedback/{feedbackId} {
+      // Users can read their own feedback
+      allow read: if isSignedIn() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Users can create feedback
+      allow create: if isSignedIn() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       validateFeedbackData(request.resource.data);
+      
+      // Users can update their own feedback
+      allow update: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own feedback
+      allow delete: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // ========================================
+    // SYSTEM COLLECTIONS
+    // ========================================
     
     match /system/{document} {
       allow read: if false; // No user access to system data
@@ -67,47 +204,98 @@ service cloud.firestore {
   }
 }
 
+// ========================================
+// VALIDATION FUNCTIONS
+// ========================================
+
 // Validation function for note data - HACK-PROOF
 function validateNoteData(data) {
-  return data.keys().hasAll(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt', 'userId', 'tags', 'isStarred'])
-    && data.keys().hasOnly(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt', 'userId', 'tags', 'isStarred'])
-    && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-    && data.content is string && data.content.size() <= 100000 // Increased for rich text
-    && data.plainText is string && data.plainText.size() <= 50000
-    && data.tone in ['professional', 'casual', 'simplified']
-    && data.wordCount is number && data.wordCount >= 0 && data.wordCount <= 50000
+  return data.keys().hasAny(['title', 'content', 'plainText', 'tone', 'wordCount', 'createdAt', 'updatedAt'])
+    && (data.get('userId', '') is string || data.get('createdBy', '') is string)
+    && (!('title' in data) || (data.title is string && data.title.size() <= 200))
+    && (!('content' in data) || (data.content is string && data.content.size() <= 100000))
+    && (!('plainText' in data) || (data.plainText is string && data.plainText.size() <= 50000))
+    && (!('tone' in data) || data.tone in ['professional', 'casual', 'simplified'])
+    && (!('wordCount' in data) || (data.wordCount is number && data.wordCount >= 0 && data.wordCount <= 50000))
+    && (!('createdAt' in data) || data.createdAt is timestamp)
+    && (!('updatedAt' in data) || data.updatedAt is timestamp)
+    && (!('tags' in data) || (data.tags is list && data.tags.size() <= 20))
+    && (!('isStarred' in data) || data.isStarred is bool)
+    && (!('folderId' in data) || data.folderId is string || data.folderId == null)
+    && (!('isPinned' in data) || data.isPinned is bool)
+    && (!('isArchived' in data) || data.isArchived is bool);
+}
+
+// Validation function for folder data - HACK-PROOF  
+function validateFolderData(data) {
+  return data.keys().hasAll(['name', 'color', 'icon', 'createdAt', 'updatedAt', 'createdBy', 'noteCount', 'order'])
+    && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+    && data.color is string && data.color.size() >= 4 && data.color.size() <= 9
+    && data.icon is string && data.icon.size() > 0 && data.icon.size() <= 50
     && data.createdAt is timestamp
     && data.updatedAt is timestamp
-    && data.userId is string && data.userId.size() > 0
-    && data.tags is list && data.tags.size() <= 20
-    && data.isStarred is bool;
+    && data.createdBy is string && data.createdBy.size() > 0
+    && data.noteCount is number && data.noteCount >= 0
+    && data.order is number && data.order >= 0
+    && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+    && (!('isDefault' in data) || data.isDefault is bool)
+    && (!('isArchived' in data) || data.isArchived is bool)
+    && (!('parentId' in data) || data.parentId is string || data.parentId == null);
 }
 
 // Validation function for version data - HACK-PROOF
 function validateVersionData(data) {
-  return data.keys().hasAll(['noteId', 'content', 'version', 'createdAt', 'userId', 'size', 'metadata'])
-    && data.keys().hasOnly(['noteId', 'content', 'version', 'createdAt', 'userId', 'size', 'metadata'])
-    && data.noteId is string && data.noteId.size() > 0 && data.noteId.size() <= 100
-    && data.content is string && data.content.size() <= 100000
-    && data.version is number && data.version >= 1 && data.version <= 1000
-    && data.createdAt is timestamp
-    && data.userId is string && data.userId.size() > 0
-    && data.size is number && data.size >= 0 && data.size <= 100000
-    && data.metadata is map
-    && data.metadata.keys().hasAll(['wordCount', 'characterCount'])
-    && data.metadata.keys().hasOnly(['wordCount', 'characterCount'])
-    && data.metadata.wordCount is number && data.metadata.wordCount >= 0 && data.metadata.wordCount <= 50000
-    && data.metadata.characterCount is number && data.metadata.characterCount >= 0 && data.metadata.characterCount <= 100000;
+  return data.keys().hasAny(['noteId', 'content', 'version', 'createdAt', 'size', 'metadata'])
+    && (!('noteId' in data) || (data.noteId is string && data.noteId.size() > 0 && data.noteId.size() <= 100))
+    && (!('content' in data) || (data.content is string && data.content.size() <= 100000))
+    && (!('version' in data) || (data.version is number && data.version >= 1 && data.version <= 1000))
+    && (!('createdAt' in data) || data.createdAt is timestamp)
+    && (!('size' in data) || (data.size is number && data.size >= 0 && data.size <= 100000))
+    && (!('metadata' in data) || (
+        data.metadata is map &&
+        (!('wordCount' in data.metadata) || (data.metadata.wordCount is number && data.metadata.wordCount >= 0 && data.metadata.wordCount <= 50000)) &&
+        (!('characterCount' in data.metadata) || (data.metadata.characterCount is number && data.metadata.characterCount >= 0 && data.metadata.characterCount <= 100000))
+      ));
 }
 
 // Validation function for user profile data - HACK-PROOF
 function validateUserData(data) {
-  return data.keys().hasOnly(['email', 'displayName', 'photoURL', 'createdAt', 'updatedAt', 'preferences', 'subscription'])
-    && (data.email == null || (data.email is string && data.email.size() <= 320))
-    && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100))
-    && (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 500))
+  return (!('email' in data) || (data.email is string && data.email.size() <= 320))
+    && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+    && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+    && (!('createdAt' in data) || data.createdAt is timestamp)
+    && (!('updatedAt' in data) || data.updatedAt is timestamp)
+    && (!('preferences' in data) || data.preferences is map)
+    && (!('subscription' in data) || data.subscription is map);
+}
+
+// Validation function for analytics data
+function validateAnalyticsData(data) {
+  return data.keys().hasAll(['type', 'userId', 'timestamp'])
+    && data.type is string && data.type.size() > 0
+    && data.userId is string && data.userId.size() > 0
+    && data.timestamp is timestamp
+    && (!('folderId' in data) || data.folderId is string)
+    && (!('noteId' in data) || data.noteId is string)
+    && (!('action' in data) || data.action is string)
+    && (!('platform' in data) || data.platform is string);
+}
+
+// Validation function for subscription data
+function validateSubscriptionData(data) {
+  return data.keys().hasAll(['userId', 'plan', 'status', 'createdAt', 'updatedAt'])
+    && data.userId is string && data.userId.size() > 0
+    && data.plan in ['free', 'pro', 'premium']
+    && data.status in ['active', 'inactive', 'cancelled', 'expired']
     && data.createdAt is timestamp
-    && data.updatedAt is timestamp
-    && (data.preferences == null || data.preferences is map)
-    && (data.subscription == null || data.subscription is map);
+    && data.updatedAt is timestamp;
+}
+
+// Validation function for feedback data
+function validateFeedbackData(data) {
+  return data.keys().hasAll(['userId', 'type', 'content', 'createdAt'])
+    && data.userId is string && data.userId.size() > 0
+    && data.type in ['bug', 'feature', 'general', 'rating']
+    && data.content is string && data.content.size() > 0 && data.content.size() <= 2000
+    && data.createdAt is timestamp;
 }
