@@ -31,7 +31,12 @@ export interface BoundingBox {
   y: number;
   width: number;
   height: number;
-  text: string;
+}
+
+// Page file interface for scanner
+export interface PageFile {
+  path: string;
+  uri: string;
 }
 
 // Multi-page scanning types
