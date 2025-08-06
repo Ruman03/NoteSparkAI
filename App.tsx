@@ -20,6 +20,8 @@ import ToneSelectionScreen from './src/screens/ToneSelectionScreen';
 import EditorScreen from './src/screens/EditorScreen';
 import LibraryScreen from './src/screens/LibraryScreen';
 import AuthScreen from './src/screens/AuthScreen';
+import VersionHistoryScreen from './src/screens/VersionHistoryScreen';
+import VersionPreviewScreen from './src/screens/VersionPreviewScreen';
 
 // Custom NoteSpark AI Theme
 const noteSparkLightColors = {
@@ -92,6 +94,15 @@ export type RootStackParamList = {
     originalText: string; 
     tone: string;
     enhancedText?: string;
+  };
+  VersionHistory: {
+    noteId: string;
+    noteTitle: string;
+  };
+  VersionPreview: {
+    noteId: string;
+    versionId: string;
+    noteTitle: string;
   };
 };
 
@@ -208,6 +219,22 @@ function AppNavigator() {
         component={EditorScreen}
         options={{ 
           title: 'Edit Note',
+          headerTitleAlign: 'center',
+        }}
+      />
+      <Stack.Screen 
+        name="VersionHistory" 
+        component={VersionHistoryScreen}
+        options={{ 
+          title: 'Version History',
+          headerTitleAlign: 'center',
+        }}
+      />
+      <Stack.Screen 
+        name="VersionPreview" 
+        component={VersionPreviewScreen}
+        options={{ 
+          title: 'Version Preview',
           headerTitleAlign: 'center',
         }}
       />

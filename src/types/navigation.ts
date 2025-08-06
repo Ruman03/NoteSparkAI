@@ -26,6 +26,15 @@ export type RootStackParamList = {
     originalText?: string;
     noteTitle?: string;
   };
+  VersionHistory: {
+    noteId: string;
+    noteTitle: string;
+  };
+  VersionPreview: {
+    noteId: string;
+    versionId: string;
+    noteTitle: string;
+  };
 };
 
 // Tab Navigator Types
@@ -69,6 +78,16 @@ export type ToneSelectionScreenNavigationProp = NativeStackNavigationProp<
 export type EditorScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'Editor'
+>;
+
+export type VersionHistoryScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'VersionHistory'
+>;
+
+export type VersionPreviewScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'VersionPreview'
 >;
 
 // Route Props

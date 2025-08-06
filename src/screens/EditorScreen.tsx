@@ -31,7 +31,7 @@ import { RichEditor, RichToolbar, actions, FONT_SIZE } from 'react-native-pell-r
 import { AIService, AITransformationRequest } from '../services/AIService';
 import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
-import { useAdaptiveAutoSave } from '../hooks/useAdaptiveAutoSave';
+import { useAutoSaveWithVersioning } from '../hooks/useAutoSaveWithVersioning';
 import VoiceInput from '../components/voice/VoiceInput';
 import type { EditorScreenNavigationProp, RootStackParamList } from '../types/navigation';
 import auth from '@react-native-firebase/auth';
@@ -47,7 +47,6 @@ export default function EditorScreen() {
   const noteIdRef = useRef<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [noteTitle, setNoteTitle] = useState('New Note');
   const [initialContent, setInitialContent] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -56,7 +55,6 @@ export default function EditorScreen() {
   const [lastContent, setLastContent] = useState('');
   const [currentContent, setCurrentContent] = useState('');
   const [isScreenFocused, setIsScreenFocused] = useState(true);
-  const [showAutoSaveSettings, setShowAutoSaveSettings] = useState(false);
   
   // Voice input state
   const [showVoiceInput, setShowVoiceInput] = useState(false);
@@ -344,7 +342,6 @@ export default function EditorScreen() {
         noteIdRef.current = newNoteId;
       }
 
-      setLastSaved(new Date());
       setIsOnline(true); // Successful save indicates we're online
     } catch (error) {
       console.error('Save failed:', error);
@@ -355,18 +352,26 @@ export default function EditorScreen() {
     }
   }, [isScreenFocused, noteTitle, tone, originalText, routeNoteId]);
 
-  // Adaptive auto-save hook integration
+  // Get current user for versioning
+  const currentUser = auth().currentUser;
+
+  // Auto-save with versioning hook integration
   const {
-    saveSettings,
-    triggerSave: manualSave,
-    hasUnsavedChanges,
-    updateSaveFrequency,
-    getCurrentInterval,
-    getNextSaveTime
-  } = useAdaptiveAutoSave(
+    isSaving: isAutoSaving,
+    lastSaved,
+    lastVersioned,
+    manualSave,
+  } = useAutoSaveWithVersioning(
+    noteId || '',
+    noteTitle,
     currentContent,
-    noteId || 'temp', 
-    saveNoteContent
+    currentUser?.uid || '',
+    {
+      enabled: !!noteId && !!currentUser,
+      autoSaveInterval: 2,
+      versionInterval: 15,
+      minChangesForVersion: 50,
+    }
   );
 
   // Initialize noteId with routeNoteId when editing existing notes
@@ -465,34 +470,29 @@ export default function EditorScreen() {
       // Update current content to trigger adaptive auto-save
       setCurrentContent(html);
       
-      // Trigger manual save through adaptive auto-save hook
-      const saveSuccessful = await manualSave();
+      // Trigger manual save through versioning hook
+      await manualSave();
       
-      if (saveSuccessful) {
-        hapticService.success();
-        
-        if (isNewNote) {
-          // For new notes, show success and redirect to library
-          Alert.alert(
-            'Success', 
-            'Note saved successfully!',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  // Navigate to the MainTabs with Library screen focused
-                  navigation.navigate('MainTabs', { screen: 'Library' });
-                }
+      hapticService.success();
+      
+      if (isNewNote) {
+        // For new notes, show success and redirect to library
+        Alert.alert(
+          'Success', 
+          'Note saved successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Navigate to the MainTabs with Library screen focused
+                navigation.navigate('MainTabs', { screen: 'Library' });
               }
-            ]
-          );
-        } else {
-          // For existing notes, just show success message and stay on editor
-          Alert.alert('Success', 'Note updated successfully!');
-        }
+            }
+          ]
+        );
       } else {
-        hapticService.error();
-        Alert.alert('Error', 'Failed to save note. Please try again.');
+        // For existing notes, just show success message and stay on editor
+        Alert.alert('Success', 'Note updated successfully!');
       }
       
       setIsSaving(false);
@@ -559,6 +559,18 @@ export default function EditorScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title={noteTitle} titleStyle={[styles.headerTitle, { color: theme.colors.onSurface }]} />
+        {noteId && (
+          <IconButton
+            icon="history"
+            size={24}
+            iconColor={theme.colors.onSurface}
+            onPress={() => navigation.navigate('VersionHistory', { 
+              noteId, 
+              noteTitle 
+            })}
+            style={{ marginRight: 8 }}
+          />
+        )}
         <Button 
           mode="contained" 
           onPress={handleSave} 
@@ -570,15 +582,13 @@ export default function EditorScreen() {
         </Button>
       </Appbar.Header>
 
-      {/* Enhanced status bar with adaptive auto-save info and word count */}
+      {/* Enhanced status bar with version tracking and word count */}
       <View style={[styles.statusBar, { backgroundColor: theme.colors.surfaceVariant }]}>
         <View style={styles.statusLeft}>
           <View style={styles.statusSaveSection}>
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-              {hasUnsavedChanges 
-                ? saveSettings.frequency === 'manual' 
-                  ? 'Unsaved changes' 
-                  : `Auto-saving (${saveSettings.frequency})`
+              {isAutoSaving
+                ? 'Auto-saving...'
                 : lastSaved 
                   ? `Saved ${lastSaved.toLocaleTimeString()}`
                   : 'Not saved'
@@ -593,9 +603,9 @@ export default function EditorScreen() {
               />
             </Tooltip>
           </View>
-          {saveSettings.frequency === 'adaptive' && (
+          {lastVersioned && (
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
-              Next save in {Math.ceil(getCurrentInterval() / 1000)}s
+              Last version: {lastVersioned.toLocaleTimeString()}
             </Text>
           )}
         </View>
@@ -603,13 +613,18 @@ export default function EditorScreen() {
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
             {wordCount} words
           </Text>
-          <IconButton
-            icon="cog"
-            size={16}
-            iconColor={theme.colors.onSurfaceVariant}
-            onPress={() => setShowAutoSaveSettings(true)}
-            style={{ margin: 0, padding: 4 }}
-          />
+          {noteId && (
+            <IconButton
+              icon="history"
+              size={16}
+              iconColor={theme.colors.onSurfaceVariant}
+              onPress={() => navigation.navigate('VersionHistory', { 
+                noteId, 
+                noteTitle 
+              })}
+              style={{ margin: 0, padding: 4 }}
+            />
+          )}
         </View>
       </View>
 
@@ -1163,61 +1178,6 @@ export default function EditorScreen() {
               Insert Link
             </Button>
           </View>
-        </Modal>
-      </Portal>
-
-      {/* Auto-save Settings Modal */}
-      <Portal>
-        <Modal 
-          visible={showAutoSaveSettings} 
-          onDismiss={() => setShowAutoSaveSettings(false)}
-          contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
-        >
-          <Text variant="headlineSmall" style={styles.modalTitle}>Auto-save Settings</Text>
-          
-          <Text variant="bodyMedium" style={styles.modalSubtitle}>
-            Choose how frequently your notes are automatically saved
-          </Text>
-
-          <View style={styles.settingsContainer}>
-            {[
-              { key: 'realtime', label: 'Real-time', description: 'Save every few seconds' },
-              { key: 'adaptive', label: 'Adaptive (Recommended)', description: 'Learns your editing patterns' },
-              { key: 'conservative', label: 'Conservative', description: 'Save every 10 seconds' },
-              { key: 'manual', label: 'Manual Only', description: 'Save only when you tap Save' }
-            ].map((option) => (
-              <View key={option.key} style={styles.settingOption}>
-                <View style={styles.settingInfo}>
-                  <Text variant="bodyLarge">{option.label}</Text>
-                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                    {option.description}
-                  </Text>
-                </View>
-                <IconButton
-                  icon={saveSettings.frequency === option.key ? 'radiobox-marked' : 'radiobox-blank'}
-                  iconColor={saveSettings.frequency === option.key ? theme.colors.primary : theme.colors.onSurface}
-                  onPress={() => updateSaveFrequency(option.key as any)}
-                />
-              </View>
-            ))}
-          </View>
-
-          {saveSettings.frequency === 'adaptive' && saveSettings.userPattern && (
-            <View style={styles.patternInfo}>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                Learned pattern: {saveSettings.userPattern.editingStyle} editing, 
-                {Math.round(saveSettings.userPattern.averageEditingSpeed)} WPM
-              </Text>
-            </View>
-          )}
-
-          <Button 
-            mode="contained" 
-            onPress={() => setShowAutoSaveSettings(false)}
-            style={styles.modalButton}
-          >
-            Done
-          </Button>
         </Modal>
       </Portal>
 

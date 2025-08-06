@@ -16,6 +16,8 @@ import DocumentPreviewScreen from '../screens/DocumentPreviewScreen';
 import ToneSelectionScreen from '../screens/ToneSelectionScreen';
 import EditorScreen from '../screens/EditorScreen';
 import LibraryScreen from '../screens/LibraryScreen';
+import VersionHistoryScreen from '../screens/VersionHistoryScreen';
+import VersionPreviewScreen from '../screens/VersionPreviewScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -126,6 +128,20 @@ export default function AppNavigator() {
           component={EditorScreen}
           options={{ 
             title: 'Edit Note',
+          }}
+        />
+        <Stack.Screen 
+          name="VersionHistory" 
+          component={VersionHistoryScreen}
+          options={{ 
+            title: 'Version History',
+          }}
+        />
+        <Stack.Screen 
+          name="VersionPreview" 
+          component={VersionPreviewScreen}
+          options={{ 
+            title: 'Version Preview',
           }}
         />
       </Stack.Navigator>
