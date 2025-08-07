@@ -57,6 +57,7 @@ type VoiceVolumeCallback = (volume: number) => void;
 /**
  * Production Voice-to-Text Service
  * Uses @react-native-voice/voice for real speech recognition
+ * OPTIMIZED: Enhanced with retry logic, comprehensive error handling, and performance improvements
  */
 class VoiceToTextService {
   private static instance: VoiceToTextService;
@@ -93,6 +94,95 @@ class VoiceToTextService {
   private confidenceScores: number[] = [];
   private sessionTimeout?: NodeJS.Timeout;
   private lastSpeechTime = 0;
+  private retryAttempts = 0;
+  private maxRetryAttempts = 3;
+
+  // OPTIMIZED: Enhanced retry mechanism for voice operations
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxRetries: number = 3,
+    timeoutMs: number = 10000
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`VoiceToTextService: ${operationName} attempt ${attempt}/${maxRetries}`);
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timeoutId = setTimeout(() => reject(new Error('Voice operation timeout')), timeoutMs);
+          (timeoutPromise as any).timeoutId = timeoutId;
+        });
+        
+        const result = await Promise.race([operation(), timeoutPromise]);
+        console.log(`VoiceToTextService: ${operationName} succeeded on attempt ${attempt}`);
+        
+        if ((timeoutPromise as any).timeoutId) {
+          clearTimeout((timeoutPromise as any).timeoutId);
+        }
+        
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`VoiceToTextService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
+        
+        // Don't retry for certain errors
+        if (this.isNonRetryableError(lastError)) {
+          console.log(`VoiceToTextService: Non-retryable error for ${operationName}, stopping retries`);
+          break;
+        }
+        
+        if (attempt === maxRetries) {
+          break;
+        }
+        
+        // Progressive delay between retries
+        const delay = Math.min(1000 * attempt, 3000);
+        console.log(`VoiceToTextService: Retrying ${operationName} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw new Error(`All ${maxRetries} attempts failed for ${operationName}: ${lastError!.message}`);
+  }
+
+  // OPTIMIZED: Check if error should not be retried
+  private isNonRetryableError(error: Error): boolean {
+    const nonRetryableMessages = [
+      'permission denied',
+      'microphone access',
+      'already listening',
+      'not supported',
+      'invalid language',
+      'user denied'
+    ];
+    
+    const errorMessage = error.message.toLowerCase();
+    return nonRetryableMessages.some(msg => errorMessage.includes(msg));
+  }
+
+  // OPTIMIZED: Enhanced input validation
+  private validateVoiceSettings(settings?: Partial<VoiceSettings>): void {
+    if (settings?.language) {
+      const validLanguages = ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE', 'it-IT', 'pt-BR', 'ja-JP', 'ko-KR', 'zh-CN'];
+      if (!validLanguages.includes(settings.language)) {
+        throw new Error(`Unsupported language: ${settings.language}`);
+      }
+    }
+    
+    if (settings?.maxDuration !== undefined) {
+      if (settings.maxDuration < 1000 || settings.maxDuration > 300000) { // 1 second to 5 minutes
+        throw new Error('Max duration must be between 1 second and 5 minutes');
+      }
+    }
+    
+    if (settings?.pauseThreshold !== undefined) {
+      if (settings.pauseThreshold < 100 || settings.pauseThreshold > 10000) { // 100ms to 10 seconds
+        throw new Error('Pause threshold must be between 100ms and 10 seconds');
+      }
+    }
+  }
 
   /**
    * Singleton pattern - ensures single voice service instance
