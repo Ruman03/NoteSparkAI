@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, FlatList } from 'react-native';
-import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar } from 'react-native-paper';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, FlatList, RefreshControl } from 'react-native';
+import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar, Chip } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -12,6 +12,27 @@ import { NotesService } from '../services/NotesService';
 import { hapticService } from '../services/HapticService';
 import auth from '@react-native-firebase/auth';
 
+// Enhanced interfaces for better type safety and analytics
+interface HomeScreenStats {
+  totalNotes: number;
+  totalWords: number;
+  notesToday: number;
+  streak: number;
+  averageNoteLength: number;
+  lastWeekActivity: number;
+  productivityScore: number;
+}
+
+interface HomeScreenMetrics {
+  loadTime: number;
+  lastRefresh: Date;
+  userEngagement: {
+    quickActionsUsed: number;
+    notesViewed: number;
+    sessionsToday: number;
+  };
+}
+
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
@@ -19,44 +40,78 @@ export default function HomeScreen() {
   const theme = useTheme();
   const { user, signOut } = useAuth();
   const [recentNotes, setRecentNotes] = useState<Note[]>([]);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<HomeScreenStats>({
     totalNotes: 0,
     totalWords: 0,
     notesToday: 0,
-    streak: 0
+    streak: 0,
+    averageNoteLength: 0,
+    lastWeekActivity: 0,
+    productivityScore: 0
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [metrics, setMetrics] = useState<HomeScreenMetrics>({
+    loadTime: 0,
+    lastRefresh: new Date(),
+    userEngagement: {
+      quickActionsUsed: 0,
+      notesViewed: 0,
+      sessionsToday: 0
+    }
+  });
   
-  const notesService = NotesService.getInstance();
+  const notesService = useMemo(() => NotesService.getInstance(), []);
 
-  // Get time-based greeting with motivational message
-  const getGreeting = () => {
+  // Enhanced greeting system with personalization
+  const getGreeting = useCallback(() => {
     const hour = new Date().getHours();
     const firstName = user?.displayName || user?.email?.split('@')[0] || 'there';
     
     let timeGreeting = '';
-    if (hour < 12) timeGreeting = `Good morning, ${firstName}!`;
-    else if (hour < 17) timeGreeting = `Good afternoon, ${firstName}!`;
-    else timeGreeting = `Good evening, ${firstName}!`;
+    let emoji = '';
     
-    return timeGreeting;
-  };
+    if (hour < 6) {
+      timeGreeting = `Working late, ${firstName}?`;
+      emoji = '🌙';
+    } else if (hour < 12) {
+      timeGreeting = `Good morning, ${firstName}!`;
+      emoji = '🌅';
+    } else if (hour < 17) {
+      timeGreeting = `Good afternoon, ${firstName}!`;
+      emoji = '☀️';
+    } else if (hour < 22) {
+      timeGreeting = `Good evening, ${firstName}!`;
+      emoji = '🌆';
+    } else {
+      timeGreeting = `Burning the midnight oil, ${firstName}?`;
+      emoji = '🌃';
+    }
+    
+    return { greeting: timeGreeting, emoji };
+  }, [user]);
 
-  const getMotivationalMessage = () => {
+  const getMotivationalMessage = useCallback(() => {
     const messages = [
       "Ready to capture your thoughts?",
       "What will you discover today?", 
       "Your ideas are waiting to be explored",
       "Time to turn thoughts into notes",
-      "Ready to spark some creativity?"
+      "Ready to spark some creativity?",
+      "Let's make today productive!",
+      "Transform your thinking with AI",
+      "Every note is a step forward"
     ];
     return messages[Math.floor(Math.random() * messages.length)];
-  };
+  }, []);
 
-  // Calculate comprehensive statistics
-  const calculateStats = (notes: Note[]) => {
+  // Enhanced statistics calculation with comprehensive analytics
+  const calculateStats = useCallback((notes: Note[]): HomeScreenStats => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
+    const lastWeek = new Date(today);
+    lastWeek.setDate(lastWeek.getDate() - 7);
     
     const totalWords = notes.reduce((sum, note) => {
       return sum + (note.plainText ? note.plainText.split(/\s+/).filter(word => word.length > 0).length : 0);
@@ -70,7 +125,13 @@ export default function HomeScreen() {
       return noteDate.getTime() === today.getTime();
     }).length;
     
-    // Simple streak calculation (consecutive days with notes)
+    const lastWeekActivity = notes.filter(note => {
+      if (!note.createdAt) return false;
+      const noteDate = new Date(note.createdAt);
+      return noteDate >= lastWeek;
+    }).length;
+    
+    // Enhanced streak calculation
     let streak = 0;
     const sortedNotes = notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     
@@ -78,7 +139,7 @@ export default function HomeScreen() {
       let currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0);
       
-      for (let i = 0; i < 30; i++) { // Check last 30 days
+      for (let i = 0; i < 30; i++) {
         const hasNoteOnDay = sortedNotes.some(note => {
           const noteDate = new Date(note.createdAt);
           noteDate.setHours(0, 0, 0, 0);
@@ -89,7 +150,6 @@ export default function HomeScreen() {
           streak++;
           currentDate.setDate(currentDate.getDate() - 1);
         } else if (i === 0) {
-          // No notes today, check yesterday
           currentDate.setDate(currentDate.getDate() - 1);
           const hasNoteYesterday = sortedNotes.some(note => {
             const noteDate = new Date(note.createdAt);
@@ -108,16 +168,32 @@ export default function HomeScreen() {
       }
     }
     
+    const averageNoteLength = notes.length > 0 ? Math.round(totalWords / notes.length) : 0;
+    
+    // Productivity score calculation (0-100)
+    let productivityScore = 0;
+    if (notes.length > 0) {
+      productivityScore += Math.min(notes.length * 2, 30); // Notes count (max 30)
+      productivityScore += Math.min(streak * 5, 35); // Streak bonus (max 35)
+      productivityScore += Math.min(lastWeekActivity * 3, 25); // Recent activity (max 25)
+      productivityScore += Math.min(notesToday * 10, 10); // Today's productivity (max 10)
+    }
+    
     return {
       totalNotes: notes.length,
       totalWords,
       notesToday,
-      streak
+      streak,
+      averageNoteLength,
+      lastWeekActivity,
+      productivityScore: Math.round(productivityScore)
     };
-  };
+  }, []);
 
-  // Load user data - memoized to prevent infinite loops
+  // Enhanced load user data with error recovery and performance monitoring
   const loadUserData = useCallback(async () => {
+    const startTime = Date.now();
+    
     try {
       setIsLoading(true);
       
@@ -127,22 +203,60 @@ export default function HomeScreen() {
         return;
       }
       
-      // Use Promise.all to load data concurrently and add a minimum loading time for smooth UX
+      // Use Promise.all for concurrent loading with enhanced error handling
       const [notes] = await Promise.all([
-        notesService.getUserNotes(user.uid),
-        new Promise(resolve => setTimeout(resolve, 800)) // Minimum 800ms for smooth loading experience
+        notesService.getUserNotes(user.uid).catch(error => {
+          console.error('HomeScreen: Error loading notes:', error);
+          return []; // Return empty array on error
+        }),
+        new Promise(resolve => setTimeout(resolve, Math.max(500, 1200 - (Date.now() - startTime)))) // Adaptive loading time
       ]);
       
       const calculatedStats = calculateStats(notes);
       setStats(calculatedStats);
-      // Get 5 most recent notes
-      setRecentNotes(notes.slice(0, 5));
+      
+      // Get enhanced recent notes (top 6 for better grid layout)
+      const sortedRecentNotes = notes
+        .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+        .slice(0, 6);
+      setRecentNotes(sortedRecentNotes);
+      
+      // Update metrics
+      const loadTime = Date.now() - startTime;
+      setMetrics(prev => ({
+        ...prev,
+        loadTime,
+        lastRefresh: new Date(),
+        userEngagement: {
+          ...prev.userEngagement,
+          sessionsToday: prev.userEngagement.sessionsToday + 1
+        }
+      }));
+      
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('HomeScreen: Error loading user data:', error);
+      
+      // Show user-friendly error with retry option
+      Alert.alert(
+        'Loading Error',
+        'Unable to load your notes. Would you like to try again?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: () => loadUserData() }
+        ]
+      );
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
-  }, []); // Empty deps - only recreate on mount
+  }, [calculateStats, notesService]);
+
+  // Enhanced refresh with pull-to-refresh support
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    hapticService.light();
+    await loadUserData();
+  }, [loadUserData]);
 
   // Reload data when screen comes into focus (prevent infinite loops)
   useFocusEffect(
@@ -151,43 +265,99 @@ export default function HomeScreen() {
     }, [loadUserData]) // Include loadUserData in deps since it's memoized
   );
 
-  const handleScanDocument = () => {
-    hapticService.medium();
-    navigation.navigate('Scanner');
-  };
-
-  const handleViewLibrary = () => {
-    hapticService.light();
-    navigation.navigate('Library');
-  };
-
-  const handleCreateBlankNote = () => {
-    hapticService.medium();
-    const parentNavigation = navigation.getParent();
-    if (parentNavigation) {
-      parentNavigation.navigate('Editor', { 
-        noteText: '', 
-        tone: 'professional' 
-      });
+  // Enhanced navigation handlers with analytics tracking
+  const handleScanDocument = useCallback(() => {
+    try {
+      hapticService.medium();
+      setMetrics(prev => ({
+        ...prev,
+        userEngagement: {
+          ...prev.userEngagement,
+          quickActionsUsed: prev.userEngagement.quickActionsUsed + 1
+        }
+      }));
+      navigation.navigate('Scanner');
+    } catch (error) {
+      console.error('HomeScreen: Error navigating to Scanner:', error);
     }
-  };
+  }, [navigation]);
 
-  const handleDocumentUpload = () => {
-    hapticService.medium();
-    navigation.navigate('DocumentUploadScreen');
-  };
-
-  const handleNotePress = (note: Note) => {
-    hapticService.light();
-    const parentNavigation = navigation.getParent();
-    if (parentNavigation) {
-      parentNavigation.navigate('Editor', {
-        noteText: note.content,
-        tone: note.tone,
-        originalText: note.originalText
-      });
+  const handleViewLibrary = useCallback(() => {
+    try {
+      hapticService.light();
+      setMetrics(prev => ({
+        ...prev,
+        userEngagement: {
+          ...prev.userEngagement,
+          quickActionsUsed: prev.userEngagement.quickActionsUsed + 1
+        }
+      }));
+      navigation.navigate('Library');
+    } catch (error) {
+      console.error('HomeScreen: Error navigating to Library:', error);
     }
-  };
+  }, [navigation]);
+
+  const handleCreateBlankNote = useCallback(() => {
+    try {
+      hapticService.medium();
+      setMetrics(prev => ({
+        ...prev,
+        userEngagement: {
+          ...prev.userEngagement,
+          quickActionsUsed: prev.userEngagement.quickActionsUsed + 1
+        }
+      }));
+      const parentNavigation = navigation.getParent();
+      if (parentNavigation) {
+        parentNavigation.navigate('Editor', { 
+          noteText: '', 
+          tone: 'professional' 
+        });
+      }
+    } catch (error) {
+      console.error('HomeScreen: Error navigating to Editor:', error);
+    }
+  }, [navigation]);
+
+  const handleDocumentUpload = useCallback(() => {
+    try {
+      hapticService.medium();
+      setMetrics(prev => ({
+        ...prev,
+        userEngagement: {
+          ...prev.userEngagement,
+          quickActionsUsed: prev.userEngagement.quickActionsUsed + 1
+        }
+      }));
+      navigation.navigate('DocumentUploadScreen');
+    } catch (error) {
+      console.error('HomeScreen: Error navigating to DocumentUpload:', error);
+    }
+  }, [navigation]);
+
+  const handleNotePress = useCallback((note: Note) => {
+    try {
+      hapticService.light();
+      setMetrics(prev => ({
+        ...prev,
+        userEngagement: {
+          ...prev.userEngagement,
+          notesViewed: prev.userEngagement.notesViewed + 1
+        }
+      }));
+      const parentNavigation = navigation.getParent();
+      if (parentNavigation) {
+        parentNavigation.navigate('Editor', {
+          noteText: note.content,
+          tone: note.tone,
+          originalText: note.originalText
+        });
+      }
+    } catch (error) {
+      console.error('HomeScreen: Error navigating to note:', error);
+    }
+  }, [navigation]);
 
   const renderRecentNote = ({ item }: { item: Note }) => {
     // Determine note type icon based on source
@@ -293,18 +463,54 @@ export default function HomeScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Dynamic Header with Greeting */}
+        <ScrollView 
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+              title="Refreshing your notes..."
+              titleColor={theme.colors.onSurfaceVariant}
+            />
+          }
+        >
+          {/* Enhanced Dynamic Header with Greeting */}
           <View style={styles.header}>
-            <Text variant="headlineLarge" style={styles.title}>
-              {getGreeting()}
-            </Text>
-            <Text variant="bodyLarge" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
-              {getMotivationalMessage()}
-            </Text>
+            <View style={styles.greetingContainer}>
+              <Text variant="headlineLarge" style={styles.title}>
+                {getGreeting().greeting} {getGreeting().emoji}
+              </Text>
+              <Text variant="bodyLarge" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
+                {getMotivationalMessage()}
+              </Text>
+              
+              {/* Productivity Score Indicator */}
+              {stats.productivityScore > 0 && (
+                <View style={styles.productivityContainer}>
+                  <Chip 
+                    icon="trending-up" 
+                    style={[styles.productivityChip, { 
+                      backgroundColor: stats.productivityScore >= 70 ? theme.colors.primaryContainer : 
+                                      stats.productivityScore >= 40 ? theme.colors.secondaryContainer : 
+                                      theme.colors.tertiaryContainer 
+                    }]}
+                    textStyle={{ 
+                      color: stats.productivityScore >= 70 ? theme.colors.onPrimaryContainer : 
+                              stats.productivityScore >= 40 ? theme.colors.onSecondaryContainer : 
+                              theme.colors.onTertiaryContainer 
+                    }}
+                  >
+                    Productivity: {stats.productivityScore}%
+                  </Chip>
+                </View>
+              )}
+            </View>
           </View>
 
-          {/* Enhanced Usage Statistics */}
+          {/* Enhanced Usage Statistics with Advanced Analytics */}
           <View style={styles.statsContainer}>
             <Surface style={[styles.statCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={1}>
               <Text variant="headlineSmall" style={{ color: theme.colors.onPrimaryContainer, fontWeight: 'bold' }}>
@@ -326,12 +532,12 @@ export default function HomeScreen() {
                 Total Words
               </Text>
               <Text variant="labelSmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8, marginTop: 4 }}>
-                {stats.totalWords > 1000 ? 'Impressive!' : 'Growing strong!'}
+                Avg: {stats.averageNoteLength} per note
               </Text>
             </Surface>
           </View>
 
-          {/* Additional Stats Row */}
+          {/* Enhanced Additional Stats Row */}
           <View style={styles.statsContainer}>
             <Surface style={[styles.statCard, { backgroundColor: theme.colors.tertiaryContainer }]} elevation={1}>
               <Text variant="headlineSmall" style={{ color: theme.colors.onTertiaryContainer, fontWeight: 'bold' }}>
@@ -357,6 +563,24 @@ export default function HomeScreen() {
               </Text>
             </Surface>
           </View>
+
+          {/* Weekly Activity Insight */}
+          {stats.lastWeekActivity > 0 && (
+            <Surface style={[styles.insightCard, { backgroundColor: theme.colors.surfaceVariant }]} elevation={1}>
+              <View style={styles.insightContent}>
+                <Icon name="chart-line" size={24} color={theme.colors.primary} />
+                <View style={styles.insightText}>
+                  <Text variant="titleSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>
+                    Weekly Insight
+                  </Text>
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.8 }}>
+                    {stats.lastWeekActivity} notes created this week
+                    {stats.lastWeekActivity > 7 ? ' - Amazing consistency! 🎉' : stats.lastWeekActivity > 3 ? ' - Great progress!' : ' - Keep building momentum!'}
+                  </Text>
+                </View>
+              </View>
+            </Surface>
+          )}
 
           {/* Recent Notes Section */}
           {recentNotes.length > 0 && (
@@ -592,6 +816,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     marginTop: 8,
   },
+  greetingContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
   title: {
     fontWeight: 'bold',
     marginBottom: 8,
@@ -599,17 +827,38 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: 'center',
+    marginBottom: 12,
+  },
+  productivityContainer: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  productivityChip: {
+    borderRadius: 16,
   },
   statsContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   statCard: {
     flex: 1,
     padding: 16,
     borderRadius: 16,
     alignItems: 'center',
+  },
+  insightCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  insightContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  insightText: {
+    flex: 1,
+    marginLeft: 12,
   },
   recentSection: {
     marginBottom: 24,
