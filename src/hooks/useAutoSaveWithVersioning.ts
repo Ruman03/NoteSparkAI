@@ -83,13 +83,14 @@ export const useAutoSaveWithVersioning = (
     }
   }, [noteId, title, content, userId, enabled, minChangesForVersion, versionService]);
 
-  // Setup auto-save timer
+  // OPTIMIZED: Setup auto-save timer with proper cleanup
   useEffect(() => {
     if (!enabled || content === lastContentRef.current) return;
 
     // Clear existing timer
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
     }
 
     // Set new timer
@@ -101,17 +102,19 @@ export const useAutoSaveWithVersioning = (
     return () => {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
     };
   }, [content, enabled, autoSaveInterval, performAutoSave]);
 
-  // Setup version creation timer
+  // OPTIMIZED: Setup version creation timer with proper cleanup
   useEffect(() => {
     if (!enabled) return;
 
     // Clear existing timer
     if (versionTimerRef.current) {
       clearTimeout(versionTimerRef.current);
+      versionTimerRef.current = null;
     }
 
     // Set new timer
@@ -123,6 +126,7 @@ export const useAutoSaveWithVersioning = (
     return () => {
       if (versionTimerRef.current) {
         clearTimeout(versionTimerRef.current);
+        versionTimerRef.current = null;
       }
     };
   }, [content, enabled, versionInterval, createVersion]);
@@ -133,14 +137,16 @@ export const useAutoSaveWithVersioning = (
     await createVersion();
   }, [performAutoSave, createVersion]);
 
-  // Cleanup on unmount
+  // OPTIMIZED: Comprehensive cleanup on unmount
   useEffect(() => {
     return () => {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
       if (versionTimerRef.current) {
         clearTimeout(versionTimerRef.current);
+        versionTimerRef.current = null;
       }
     };
   }, []);

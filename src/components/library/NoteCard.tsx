@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
-import { Card, Text, Avatar, Chip, IconButton, useTheme } from 'react-native-paper';
+import { Card, Text, Avatar, Chip, IconButton, useTheme, Badge } from 'react-native-paper';
 import type { Note } from '../../types';
 import { formatDate, getToneColor, getToneIcon } from '../../utils/ui';
 
@@ -18,6 +18,10 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
   const isGridView = viewMode === 'grid';
   const cardWidth = isGridView ? (width - 48) / 2 : width - 32;
 
+  // Calculate word count and reading time
+  const wordCount = (note.plainText || '').split(' ').filter(word => word.length > 0).length;
+  const readingTime = Math.max(1, Math.ceil(wordCount / 200)); // 200 words per minute average
+
   // Determine note source type
   const getNoteSourceIcon = () => {
     if (note.sourceImageUrl) return 'camera';
@@ -31,21 +35,28 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
     return theme.colors.primary;
   };
 
+  // Check if note has attachments or special content
+  const hasAttachments = !!note.sourceImageUrl;
+  // const hasVersionHistory = note.versions && note.versions.length > 1;
+  const isPinned = note.isPinned || false;
+
   return (
     <TouchableOpacity onPress={() => onPress(note)} activeOpacity={0.7}>
       <Card 
         style={[
           styles.noteCard, 
           { backgroundColor: theme.colors.surface, width: cardWidth },
-          isGridView && styles.gridNoteCard
+          isGridView && styles.gridNoteCard,
+          isPinned && { borderLeftColor: theme.colors.primary, borderLeftWidth: 4 }
         ]} 
-        elevation={3}
+        elevation={isGridView ? 3 : 4}
       >
         <Card.Content style={[styles.noteContent, isGridView && styles.gridNoteContent]}>
-          {/* Note Source Type Indicator */}
-          <View style={styles.sourceTypeIndicator}>
+          {/* Note indicators row */}
+          <View style={styles.indicatorsRow}>
+            {/* Source type indicator */}
             <Avatar.Icon
-              size={24}
+              size={isGridView ? 18 : 20}
               icon={getNoteSourceIcon()}
               style={{ 
                 backgroundColor: getNoteSourceColor() + '20',
@@ -54,12 +65,32 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
               }}
               color={getNoteSourceColor()}
             />
+            
+            {/* Status indicators */}
+            <View style={styles.statusIndicators}>
+              {isPinned && (
+                <Badge 
+                  size={16}
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  📌
+                </Badge>
+              )}
+              {hasAttachments && (
+                <Badge 
+                  size={16}
+                  style={{ backgroundColor: theme.colors.secondary, marginLeft: 4 }}
+                >
+                  📎
+                </Badge>
+              )}
+            </View>
           </View>
 
           <View style={[styles.noteHeader, isGridView && styles.gridNoteHeader]}>
             <View style={styles.noteHeaderLeft}>
               <Avatar.Icon
-                size={isGridView ? 36 : 48}
+                size={isGridView ? 36 : 52}
                 icon={getToneIcon(note.tone)}
                 style={{ backgroundColor: getToneColor(note.tone, theme) + '20' }}
                 color={getToneColor(note.tone, theme)}
@@ -68,84 +99,105 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, viewMode, onPress, onShowActi
                 <Text 
                   variant={isGridView ? "titleSmall" : "titleMedium"} 
                   style={[styles.noteTitle, { color: theme.colors.onSurface }]} 
-                  numberOfLines={isGridView ? 3 : 2}
+                  numberOfLines={isGridView ? 2 : 2}
                 >
                   {note.title || 'Untitled Note'}
                 </Text>
                 {!isGridView && (
-                  <Text 
-                    variant="bodySmall" 
-                    style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
-                  >
-                    {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'} • {(note.plainText || '').split(' ').filter(word => word.length > 0).length} words
-                  </Text>
+                  <View style={styles.noteMetaRow}>
+                    <Text 
+                      variant="bodySmall" 
+                      style={[styles.noteDate, { color: theme.colors.onSurfaceVariant }]}
+                    >
+                      {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
+                    </Text>
+                    <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>•</Text>
+                    <Text 
+                      variant="bodySmall" 
+                      style={[styles.wordCount, { color: theme.colors.onSurfaceVariant }]}
+                    >
+                      {wordCount} words
+                    </Text>
+                    <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>•</Text>
+                    <Text 
+                      variant="bodySmall" 
+                      style={[styles.readingTime, { color: theme.colors.onSurfaceVariant }]}
+                    >
+                      {readingTime} min read
+                    </Text>
+                  </View>
                 )}
               </View>
             </View>
-            {!isGridView && (
-              <IconButton
-                icon="dots-vertical"
-                size={20}
-                iconColor={theme.colors.onSurfaceVariant}
-                onPress={() => onShowActions?.(note)}
-                style={styles.menuButton}
-              />
-            )}
+            <IconButton
+              icon="dots-vertical"
+              size={isGridView ? 18 : 20}
+              iconColor={theme.colors.onSurfaceVariant}
+              onPress={() => onShowActions?.(note)}
+              style={[styles.menuButton, isGridView && styles.gridMenuButton]}
+            />
           </View>
 
           <Text 
-            variant="bodyMedium" 
+            variant={isGridView ? "bodySmall" : "bodyMedium"} 
             style={[styles.notePreview, { color: theme.colors.onSurfaceVariant }]}
-            numberOfLines={isGridView ? 2 : 3}
+            numberOfLines={isGridView ? 3 : 3}
           >
             {note.plainText || 'No content available'}
           </Text>
 
           <View style={[styles.noteFooter, isGridView && styles.gridNoteFooter]}>
-            <Chip
-              icon={getToneIcon(note.tone)}
-              style={[
-                styles.toneChip, 
-                isGridView && styles.gridToneChip,
-                { backgroundColor: getToneColor(note.tone, theme) + '15' }
-              ]}
-              textStyle={{ 
-                color: getToneColor(note.tone, theme), 
-                fontSize: isGridView ? 12 : 12, 
-                fontWeight: '600'
-              }}
-              compact={!isGridView}
-            >
-              {note.tone || 'unknown'}
-            </Chip>
+            <View style={styles.toneAndTags}>
+              <Chip
+                icon={getToneIcon(note.tone)}
+                style={[
+                  styles.toneChip, 
+                  isGridView && styles.gridToneChip,
+                  { backgroundColor: getToneColor(note.tone, theme) + '15' }
+                ]}
+                textStyle={{ 
+                  color: getToneColor(note.tone, theme), 
+                  fontSize: isGridView ? 10 : 12, 
+                  fontWeight: '600'
+                }}
+                compact={isGridView}
+              >
+                {note.tone || 'unknown'}
+              </Chip>
+              
+              {note.tags && note.tags.length > 0 && (
+                <View style={styles.tagsContainer}>
+                  {note.tags.slice(0, isGridView ? 1 : 2).map((tag, tagIndex) => (
+                    <Chip
+                      key={tagIndex}
+                      style={[styles.tagChip, { backgroundColor: theme.colors.primaryContainer }]}
+                      textStyle={{ color: theme.colors.onPrimaryContainer, fontSize: isGridView ? 9 : 10 }}
+                      compact
+                    >
+                      #{tag}
+                    </Chip>
+                  ))}
+                  {note.tags.length > (isGridView ? 1 : 2) && (
+                    <Text style={[styles.moreTagsText, { color: theme.colors.onSurfaceVariant }]}>
+                      +{note.tags.length - (isGridView ? 1 : 2)}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
             
             {isGridView && (
-              <Text 
-                variant="labelSmall" 
-                style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
-                numberOfLines={1}
-              >
-                {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
-              </Text>
-            )}
-            
-            {!isGridView && note.tags && note.tags.length > 0 && (
-              <View style={styles.tagsContainer}>
-                {note.tags.slice(0, 2).map((tag, tagIndex) => (
-                  <Chip
-                    key={tagIndex}
-                    style={[styles.tagChip, { backgroundColor: theme.colors.primaryContainer }]}
-                    textStyle={{ color: theme.colors.onPrimaryContainer, fontSize: 10 }}
-                    compact
-                  >
-                    #{tag}
-                  </Chip>
-                ))}
-                {note.tags.length > 2 && (
-                  <Text style={[styles.moreTagsText, { color: theme.colors.onSurfaceVariant }]}>
-                    +{note.tags.length - 2} more
-                  </Text>
-                )}
+              <View style={styles.gridMetaFooter}>
+                <Text 
+                  variant="labelSmall" 
+                  style={[styles.gridNoteDate, { color: theme.colors.onSurfaceVariant }]}
+                  numberOfLines={1}
+                >
+                  {note.updatedAt ? formatDate(new Date(note.updatedAt)) : 'Unknown date'}
+                </Text>
+                <Text style={[styles.gridWordCount, { color: theme.colors.onSurfaceVariant }]}>
+                  {wordCount}w • {readingTime}m
+                </Text>
               </View>
             )}
           </View>
@@ -164,6 +216,16 @@ const styles = StyleSheet.create({
     noteContent: {
         padding: 16,
         position: 'relative',
+    },
+    indicatorsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    statusIndicators: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     sourceTypeIndicator: {
         position: 'absolute',
@@ -190,12 +252,36 @@ const styles = StyleSheet.create({
         lineHeight: 24,
         marginBottom: 4,
     },
+    noteMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+    },
     noteDate: {
+        fontSize: 12,
+        opacity: 0.7,
+    },
+    metaDot: {
+        fontSize: 12,
+        opacity: 0.7,
+        marginHorizontal: 4,
+    },
+    wordCount: {
+        fontSize: 12,
+        opacity: 0.7,
+    },
+    readingTime: {
         fontSize: 12,
         opacity: 0.7,
     },
     menuButton: {
         margin: 0,
+    },
+    gridMenuButton: {
+        margin: 0,
+        padding: 0,
+        width: 20,
+        height: 20,
     },
     notePreview: {
         lineHeight: 20,
@@ -206,21 +292,29 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
     },
+    toneAndTags: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        flexWrap: 'wrap',
+        gap: 6,
+    },
     toneChip: {
         height: 32,
         borderRadius: 16,
         justifyContent: 'center',
     },
     gridToneChip: {
-        height: 32,
-        borderRadius: 16,
-        marginBottom: 6,
+        height: 28,
+        borderRadius: 14,
+        marginBottom: 4,
         paddingHorizontal: 8,
     },
     tagsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
+        marginLeft: 8,
     },
     tagChip: {
         height: 24,
@@ -232,26 +326,47 @@ const styles = StyleSheet.create({
     },
     gridNoteCard: {
         marginHorizontal: 6,
+        marginVertical: 6,
     },
     gridNoteContent: {
-        paddingBottom: 14,
-        paddingHorizontal: 14,
+        paddingBottom: 12,
+        paddingHorizontal: 12,
+        paddingTop: 12,
     },
     gridNoteHeader: {
-        marginBottom: 8,
+        marginBottom: 6,
     },
     gridNoteFooter: {
-        marginTop: 14,
+        marginTop: 8,
         flexDirection: 'column',
         alignItems: 'flex-start',
-        gap: 8,
+        gap: 4,
         width: '100%',
+    },
+    gridMetaFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        marginTop: 4,
+    },
+    gridDateAndMenu: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        marginTop: 2,
     },
     gridNoteDate: {
         marginTop: 0,
-        fontSize: 11,
+        fontSize: 9,
         opacity: 0.7,
-        lineHeight: 14,
+        lineHeight: 11,
+        flex: 1,
+    },
+    gridWordCount: {
+        fontSize: 9,
+        opacity: 0.7,
     },
 });
 

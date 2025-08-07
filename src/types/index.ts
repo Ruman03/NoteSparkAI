@@ -15,6 +15,7 @@ export interface Note {
   createdBy: string; // For compatibility with FolderService
   tags: string[];
   isStarred: boolean;
+  isPinned?: boolean; // For pinning important notes
   folderId?: string | null; // Folder assignment for organization
   sourceImageUrl?: string; // Original scanned document image
   originalText?: string; // Original text before AI transformation

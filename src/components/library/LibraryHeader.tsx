@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Surface, Text, Searchbar, Chip, IconButton, useTheme, Icon } from 'react-native-paper';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Surface, Text, Searchbar, Chip, IconButton, useTheme, Menu } from 'react-native-paper';
 
 interface LibraryHeaderProps {
   searchQuery: string;
@@ -28,14 +28,13 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
   const theme = useTheme();
   const [menuVisible, setMenuVisible] = React.useState(false);
 
+  const openMenu = () => setMenuVisible(true);
+  const closeMenu = () => setMenuVisible(false);
+
   const handleSortChange = React.useCallback((newSortBy: 'date' | 'title' | 'tone') => {
     onSortChange(newSortBy);
-    setMenuVisible(false);
+    closeMenu();
   }, [onSortChange]);
-
-  const handleMenuToggle = React.useCallback(() => {
-    setMenuVisible(!menuVisible);
-  }, [menuVisible]);
 
   const toneFilters = [
     { label: 'All', value: null, icon: 'filter-variant' },
@@ -66,94 +65,48 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
               onPress={onViewModeChange}
               style={styles.headerButton}
             />
-            <View>
-              <IconButton
-                icon="sort"
-                size={24}
-                iconColor={menuVisible ? theme.colors.primary : theme.colors.onSurface}
-                style={styles.headerButton}
-                onPress={handleMenuToggle}
+            <Menu
+              visible={menuVisible}
+              onDismiss={closeMenu}
+              anchor={
+                <IconButton
+                  icon="sort"
+                  size={24}
+                  iconColor={menuVisible ? theme.colors.primary : theme.colors.onSurface}
+                  style={styles.headerButton}
+                  onPress={openMenu}
+                />
+              }
+              anchorPosition="bottom"
+            >
+              <Menu.Item
+                onPress={() => handleSortChange('date')}
+                title="Sort by Date"
+                leadingIcon="calendar"
+                titleStyle={{
+                  color: sortBy === 'date' ? theme.colors.primary : theme.colors.onSurface,
+                  fontWeight: sortBy === 'date' ? '600' : '400'
+                }}
               />
-              
-              {menuVisible && (
-                <View style={[styles.sortDropdown, { backgroundColor: theme.colors.surface }]}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.sortOption,
-                      sortBy === 'date' && { backgroundColor: theme.colors.primaryContainer }
-                    ]}
-                    onPress={() => handleSortChange('date')}
-                  >
-                    <View style={styles.sortOptionContent}>
-                      <Icon 
-                        source="calendar" 
-                        size={20} 
-                        color={sortBy === 'date' ? theme.colors.onPrimaryContainer : theme.colors.onSurface}
-                      />
-                      <Text style={[
-                        styles.sortOptionText, 
-                        { 
-                          color: sortBy === 'date' ? theme.colors.onPrimaryContainer : theme.colors.onSurface,
-                          fontWeight: sortBy === 'date' ? '600' : '400'
-                        }
-                      ]}>
-                        Sort by Date
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.sortOption,
-                      sortBy === 'title' && { backgroundColor: theme.colors.primaryContainer }
-                    ]}
-                    onPress={() => handleSortChange('title')}
-                  >
-                    <View style={styles.sortOptionContent}>
-                      <Icon 
-                        source="format-title" 
-                        size={20} 
-                        color={sortBy === 'title' ? theme.colors.onPrimaryContainer : theme.colors.onSurface}
-                      />
-                      <Text style={[
-                        styles.sortOptionText, 
-                        { 
-                          color: sortBy === 'title' ? theme.colors.onPrimaryContainer : theme.colors.onSurface,
-                          fontWeight: sortBy === 'title' ? '600' : '400'
-                        }
-                      ]}>
-                        Sort by Title
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.sortOption,
-                      sortBy === 'tone' && { backgroundColor: theme.colors.primaryContainer }
-                    ]}
-                    onPress={() => handleSortChange('tone')}
-                  >
-                    <View style={styles.sortOptionContent}>
-                      <Icon 
-                        source="palette" 
-                        size={20} 
-                        color={sortBy === 'tone' ? theme.colors.onPrimaryContainer : theme.colors.onSurface}
-                      />
-                      <Text style={[
-                        styles.sortOptionText, 
-                        { 
-                          color: sortBy === 'tone' ? theme.colors.onPrimaryContainer : theme.colors.onSurface,
-                          fontWeight: sortBy === 'tone' ? '600' : '400'
-                        }
-                      ]}>
-                        Sort by Tone
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+              <Menu.Item
+                onPress={() => handleSortChange('title')}
+                title="Sort by Title"
+                leadingIcon="format-title"
+                titleStyle={{
+                  color: sortBy === 'title' ? theme.colors.primary : theme.colors.onSurface,
+                  fontWeight: sortBy === 'title' ? '600' : '400'
+                }}
+              />
+              <Menu.Item
+                onPress={() => handleSortChange('tone')}
+                title="Sort by Tone"
+                leadingIcon="palette"
+                titleStyle={{
+                  color: sortBy === 'tone' ? theme.colors.primary : theme.colors.onSurface,
+                  fontWeight: sortBy === 'tone' ? '600' : '400'
+                }}
+              />
+            </Menu>
           </View>
         </View>
         
@@ -254,37 +207,6 @@ const styles = StyleSheet.create({
         minWidth: 90,
         justifyContent: 'center',
         elevation: 1,
-    },
-    sortDropdown: {
-        position: 'absolute',
-        top: 45,
-        right: 0,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 0, 0, 0.12)',
-        minWidth: 170,
-        paddingVertical: 8,
-        zIndex: 1000,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-    },
-    sortOption: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 8,
-        marginHorizontal: 4,
-    },
-    sortOptionContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    sortOptionText: {
-        fontSize: 16,
-        flex: 1,
     },
 });
 

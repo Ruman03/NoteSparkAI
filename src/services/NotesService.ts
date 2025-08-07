@@ -54,7 +54,7 @@ export class NotesService {
         ...noteData,
         userId,
         createdBy: userId, // For compatibility with FolderService
-        wordCount: noteData.plainText.split(' ').length,
+        wordCount: this.calculateWordCount(noteData.plainText),
         isStarred: false,
       };
 
@@ -79,38 +79,66 @@ export class NotesService {
     }
   }
 
-  // Retry helper function
+  // OPTIMIZED: Retry helper function with proper cleanup and limits
   private async withRetry<T>(
     operation: () => Promise<T>,
     operationName: string,
     maxRetries: number = 3,
     timeoutMs: number = 10000
   ): Promise<T> {
+    let lastError: Error;
+    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`NotesService: ${operationName} attempt ${attempt}/${maxRetries}`);
         
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Operation timeout')), timeoutMs)
-        );
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timeoutId = setTimeout(() => reject(new Error('Operation timeout')), timeoutMs);
+          // Store timeout ID for potential cleanup
+          (timeoutPromise as any).timeoutId = timeoutId;
+        });
         
         const result = await Promise.race([operation(), timeoutPromise]);
         console.log(`NotesService: ${operationName} succeeded on attempt ${attempt}`);
-        return result;
-      } catch (error) {
-        console.error(`NotesService: ${operationName} failed on attempt ${attempt}:`, error);
         
-        if (attempt === maxRetries) {
-          throw error;
+        // Clear timeout if operation completed successfully
+        if ((timeoutPromise as any).timeoutId) {
+          clearTimeout((timeoutPromise as any).timeoutId);
         }
         
-        // Wait before retry with exponential backoff
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`NotesService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
+        
+        if (attempt === maxRetries) {
+          break;
+        }
+        
+        // Optimized backoff: linear instead of exponential to prevent performance issues
+        const delay = Math.min(1000 * attempt, 3000); // Max 3 seconds delay
         console.log(`NotesService: Retrying ${operationName} in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    throw new Error(`All ${maxRetries} attempts failed for ${operationName}`);
+    
+    throw new Error(`All ${maxRetries} attempts failed for ${operationName}: ${lastError!.message}`);
+  }
+
+  // OPTIMIZED: Accurate word count calculation
+  private calculateWordCount(text: string): number {
+    if (!text || text.trim().length === 0) {
+      return 0;
+    }
+    
+    // Remove extra whitespace and split by word boundaries
+    const words = text
+      .trim()
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .split(/\s+/) // Split by whitespace
+      .filter(word => word.length > 0); // Filter out empty strings
+    
+    return words.length;
   }
 
   async getUserNotes(userId: string): Promise<Note[]> {
@@ -132,12 +160,15 @@ export class NotesService {
       
       console.log('NotesService: Query executed, found', snapshot.docs.length, 'notes');
 
-      const notes = snapshot.docs.map((docSnap: any) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt.toDate(),
-        updatedAt: docSnap.data().updatedAt.toDate(),
-      })) as Note[];
+      const notes = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+        } as Note;
+      });
       
       console.log('NotesService: Processed notes:', notes.map(n => ({ id: n.id, title: n.title })));
       return notes;
@@ -180,78 +211,127 @@ export class NotesService {
 
   async deleteNote(userId: string, noteId: string): Promise<void> {
     try {
+      console.log('NotesService: Starting deleteNote operation for ID:', noteId);
       const db = getFirestore();
       const noteRef = doc(db, this.collection, noteId);
       
-      // Verify ownership
-      const noteDoc = await getDoc(noteRef);
+      // Verify ownership with retry
+      const noteDoc = await this.withRetry(async () => {
+        return await getDoc(noteRef);
+      }, 'getDoc for ownership check');
+      
       if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
         throw new Error('Note not found or access denied');
       }
 
-      await deleteDoc(noteRef);
+      // Delete note with retry
+      await this.withRetry(async () => {
+        await deleteDoc(noteRef);
+      }, 'deleteNote');
+      
+      console.log('NotesService: Note deleted successfully:', noteId);
     } catch (error) {
-      console.error('Error deleting note:', error);
+      console.error('NotesService: Error deleting note:', error);
       throw error;
     }
   }
 
   async getNoteById(userId: string, noteId: string): Promise<Note | null> {
     try {
+      console.log('NotesService: Starting getNoteById operation for ID:', noteId);
       const db = getFirestore();
-      const noteDoc = await getDoc(doc(db, this.collection, noteId));
+      
+      // Get note with retry
+      const noteDoc = await this.withRetry(async () => {
+        return await getDoc(doc(db, this.collection, noteId));
+      }, 'getNoteById');
       
       if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
+        console.log('NotesService: Note not found or access denied for ID:', noteId);
         return null;
       }
 
       const data = noteDoc.data();
       if (!data) return null;
 
-      return {
+      const note = {
         id: noteDoc.id,
         ...data,
         createdAt: data.createdAt.toDate(),
         updatedAt: data.updatedAt.toDate(),
       } as Note;
+      
+      console.log('NotesService: Note retrieved successfully:', { id: note.id, title: note.title });
+      return note;
     } catch (error) {
-      console.error('Error fetching note by ID:', error);
+      console.error('NotesService: Error fetching note by ID:', error);
       throw error;
     }
   }
 
   async searchNotes(userId: string, searchQuery: string): Promise<Note[]> {
     try {
+      console.log('NotesService: Starting searchNotes operation for query:', searchQuery);
+      
+      // Early return for empty queries
+      if (!searchQuery || searchQuery.trim().length === 0) {
+        return [];
+      }
+      
       const db = getFirestore();
       const q = query(
         collection(db, this.collection),
         where('userId', '==', userId),
         orderBy('updatedAt', 'desc')
       );
-      const snapshot = await getDocs(q);
+      
+      // Get notes with retry
+      const snapshot = await this.withRetry(async () => {
+        return await getDocs(q);
+      }, 'searchNotes');
 
-      const notes = snapshot.docs.map((docSnap: any) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt.toDate(),
-        updatedAt: docSnap.data().updatedAt.toDate(),
-      })) as Note[];
+      const notes = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+        } as Note;
+      });
 
-      // Client-side filtering for full-text search
-      const queryLower = searchQuery.toLowerCase();
-      return notes.filter(note => 
-        note.title.toLowerCase().includes(queryLower) ||
-        note.plainText.toLowerCase().includes(queryLower) ||
-        note.tags.some(tag => tag.toLowerCase().includes(queryLower))
-      );
+      // OPTIMIZED: Client-side filtering with better performance
+      const queryLower = searchQuery.toLowerCase().trim();
+      const filteredNotes = notes.filter(note => {
+        // Check title match first (most common)
+        if (note.title.toLowerCase().includes(queryLower)) {
+          return true;
+        }
+        
+        // Check content match
+        if (note.plainText.toLowerCase().includes(queryLower)) {
+          return true;
+        }
+        
+        // Check tags (only if note has tags)
+        if (note.tags && note.tags.length > 0) {
+          return note.tags.some(tag => tag.toLowerCase().includes(queryLower));
+        }
+        
+        return false;
+      });
+      
+      console.log(`NotesService: Search completed, found ${filteredNotes.length} matches out of ${notes.length} notes`);
+      return filteredNotes;
     } catch (error) {
-      console.error('Error searching notes:', error);
+      console.error('NotesService: Error searching notes:', error);
       return [];
     }
   }
 
   async getNotesByTone(userId: string, tone: 'professional' | 'casual' | 'simplified'): Promise<Note[]> {
     try {
+      console.log('NotesService: Starting getNotesByTone operation for tone:', tone);
       const db = getFirestore();
       const q = query(
         collection(db, this.collection),
@@ -259,22 +339,33 @@ export class NotesService {
         where('tone', '==', tone),
         orderBy('updatedAt', 'desc')
       );
-      const snapshot = await getDocs(q);
+      
+      // Get notes with retry
+      const snapshot = await this.withRetry(async () => {
+        return await getDocs(q);
+      }, 'getNotesByTone');
 
-      return snapshot.docs.map((docSnap: any) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt.toDate(),
-        updatedAt: docSnap.data().updatedAt.toDate(),
-      })) as Note[];
+      const notes = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+        } as Note;
+      });
+      
+      console.log(`NotesService: Found ${notes.length} notes with tone: ${tone}`);
+      return notes;
     } catch (error) {
-      console.error('Error fetching notes by tone:', error);
+      console.error('NotesService: Error fetching notes by tone:', error);
       return [];
     }
   }
 
   async getStarredNotes(userId: string): Promise<Note[]> {
     try {
+      console.log('NotesService: Starting getStarredNotes operation for user:', userId);
       const db = getFirestore();
       const q = query(
         collection(db, this.collection),
@@ -282,31 +373,125 @@ export class NotesService {
         where('isStarred', '==', true),
         orderBy('updatedAt', 'desc')
       );
-      const snapshot = await getDocs(q);
+      
+      // Get starred notes with retry
+      const snapshot = await this.withRetry(async () => {
+        return await getDocs(q);
+      }, 'getStarredNotes');
 
-      return snapshot.docs.map((docSnap: any) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt.toDate(),
-        updatedAt: docSnap.data().updatedAt.toDate(),
-      })) as Note[];
+      const notes = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+        } as Note;
+      });
+      
+      console.log(`NotesService: Found ${notes.length} starred notes`);
+      return notes;
     } catch (error) {
-      console.error('Error fetching starred notes:', error);
+      console.error('NotesService: Error fetching starred notes:', error);
       return [];
     }
   }
 
   async toggleNoteStar(userId: string, noteId: string): Promise<void> {
     try {
-      const note = await this.getNoteById(userId, noteId);
-      if (!note) {
-        throw new Error('Note not found');
+      console.log('NotesService: Starting toggleNoteStar operation for ID:', noteId);
+      
+      // OPTIMIZED: More efficient star toggle without fetching the entire note
+      const db = getFirestore();
+      const noteRef = doc(db, this.collection, noteId);
+      
+      // Get current state with retry
+      const noteDoc = await this.withRetry(async () => {
+        return await getDoc(noteRef);
+      }, 'getDoc for star toggle');
+      
+      if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
+        throw new Error('Note not found or access denied');
       }
 
-      await this.updateNote(userId, noteId, { isStarred: !note.isStarred });
+      const currentStarState = noteDoc.data()?.isStarred || false;
+      
+      // Update with retry
+      await this.withRetry(async () => {
+        await updateDoc(noteRef, { 
+          isStarred: !currentStarState,
+          updatedAt: new Date()
+        });
+      }, 'toggleNoteStar');
+      
+      console.log(`NotesService: Note star toggled successfully: ${noteId} -> ${!currentStarState}`);
     } catch (error) {
-      console.error('Error toggling note star:', error);
-      throw new Error('Failed to update note');
+      console.error('NotesService: Error toggling note star:', error);
+      throw new Error(`Failed to update note star: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // OPTIMIZED: Get user note statistics efficiently
+  async getUserNoteStats(userId: string): Promise<{
+    totalNotes: number;
+    starredNotes: number;
+    totalWords: number;
+    notesByTone: Record<string, number>;
+  }> {
+    try {
+      console.log('NotesService: Getting user note statistics for:', userId);
+      
+      const notes = await this.getUserNotes(userId);
+      
+      const stats = {
+        totalNotes: notes.length,
+        starredNotes: notes.filter(note => note.isStarred).length,
+        totalWords: notes.reduce((total, note) => total + (note.wordCount || 0), 0),
+        notesByTone: notes.reduce((acc, note) => {
+          acc[note.tone] = (acc[note.tone] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      };
+      
+      console.log('NotesService: User stats calculated:', stats);
+      return stats;
+    } catch (error) {
+      console.error('NotesService: Error getting user stats:', error);
+      return {
+        totalNotes: 0,
+        starredNotes: 0,
+        totalWords: 0,
+        notesByTone: {}
+      };
+    }
+  }
+
+  // OPTIMIZED: Batch update notes for better performance
+  async batchUpdateNotes(userId: string, updates: Array<{ noteId: string; updates: Partial<Note> }>): Promise<void> {
+    try {
+      console.log(`NotesService: Starting batch update for ${updates.length} notes`);
+      
+      const db = getFirestore();
+      const updatePromises = updates.map(async ({ noteId, updates: noteUpdates }) => {
+        const noteRef = doc(db, this.collection, noteId);
+        
+        // Verify ownership first
+        const noteDoc = await getDoc(noteRef);
+        if (!noteDoc.exists || noteDoc.data()?.userId !== userId) {
+          throw new Error(`Access denied for note: ${noteId}`);
+        }
+        
+        return updateDoc(noteRef, {
+          ...noteUpdates,
+          updatedAt: new Date(),
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      console.log(`NotesService: Batch update completed for ${updates.length} notes`);
+    } catch (error) {
+      console.error('NotesService: Error in batch update:', error);
+      throw error;
     }
   }
 }

@@ -19,20 +19,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "createdBy",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
           "fieldPath": "userId",
           "order": "ASCENDING"
         },
@@ -55,12 +41,30 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "folderId",
+          "fieldPath": "isArchived",
           "order": "ASCENDING"
         },
         {
           "fieldPath": "updatedAt",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "folderId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdBy",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isArchived",
+          "order": "ASCENDING"
         }
       ]
     },
@@ -101,30 +105,12 @@
       ]
     },
     {
-      "collectionGroup": "notes",
+      "collectionGroup": "folders",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "userId",
+          "fieldPath": "createdBy",
           "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "tags",
-          "arrayConfig": "CONTAINS"
         },
         {
           "fieldPath": "updatedAt",
@@ -142,57 +128,7 @@
         },
         {
           "fieldPath": "order",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "folders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "createdBy",
           "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "order",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "createdBy",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "folderId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "isArchived",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "folders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "createdBy",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
         }
       ]
     },
@@ -211,25 +147,15 @@
         {
           "fieldPath": "order",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "versions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "versions",
+      "collectionGroup": "folders",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -237,51 +163,33 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isArchived",
+          "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "noteVersions",
+      "collectionGroup": "folders",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "noteId",
+          "fieldPath": "createdBy",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
+          "fieldPath": "isArchived",
+          "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "noteVersions",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "versions",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "noteId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "noteVersions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
         {
           "fieldPath": "createdAt",
           "order": "DESCENDING"
@@ -289,38 +197,15 @@
       ]
     },
     {
-      "collectionGroup": "analytics",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "versions",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "timestamp",
+          "fieldPath": "version",
           "order": "DESCENDING"
         }
       ]
     }
   ],
-  "fieldOverrides": [
-    {
-      "collectionGroup": "notes",
-      "fieldPath": "tags",
-      "indexes": [
-        {
-          "order": "ASCENDING",
-          "queryScope": "COLLECTION"
-        },
-        {
-          "order": "DESCENDING",
-          "queryScope": "COLLECTION"
-        },
-        {
-          "arrayConfig": "CONTAINS",
-          "queryScope": "COLLECTION"
-        }
-      ]
-    }
-  ]
+  "fieldOverrides": []
 }

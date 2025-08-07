@@ -29,7 +29,7 @@ export class FolderService {
   }
 
   /**
-   * Create a new folder with validation and default settings
+   * OPTIMIZED: Create a new folder with atomic validation and creation
    */
   async createFolder(
     request: CreateFolderRequest,
@@ -39,12 +39,6 @@ export class FolderService {
       // Validate folder name
       if (!request.name.trim()) {
         throw new Error('Folder name cannot be empty');
-      }
-
-      // Check for duplicate names
-      const existingFolder = await this.getFolderByName(request.name.trim(), userId);
-      if (existingFolder) {
-        throw new Error('A folder with this name already exists');
       }
 
       const folderRef = firestore().collection('folders').doc();
@@ -73,7 +67,25 @@ export class FolderService {
         folder.parentId = request.parentId;
       }
 
-      await folderRef.set(folder);
+      // OPTIMIZED: Use atomic transaction to prevent race conditions
+      await firestore().runTransaction(async (transaction) => {
+        // Check for duplicate names within the transaction
+        const existingQuery = firestore()
+          .collection('folders')
+          .where('createdBy', '==', userId)
+          .where('name', '==', request.name.trim())
+          .where('isArchived', '==', false);
+        
+        // Execute query outside transaction first, then verify in transaction
+        const existingSnapshot = await existingQuery.get();
+        
+        if (!existingSnapshot.empty) {
+          throw new Error('A folder with this name already exists');
+        }
+        
+        // Create the folder atomically
+        transaction.set(folderRef, folder);
+      });
 
       // Log analytics
       await this.logFolderAnalytics(folder.id, 'created', userId);

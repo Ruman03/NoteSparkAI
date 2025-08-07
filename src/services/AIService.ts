@@ -2,7 +2,7 @@
 // Cost-effective migration from OpenAI to Google Gemini 2.5 Flash
 // Maintains exact same interface and output format for seamless transition
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import Config from 'react-native-config';
 import { GeminiVisionService } from './GeminiVisionService';
 
@@ -44,7 +44,7 @@ class AIService {
   private static instance: AIService;
   private readonly apiKey: string;
   private readonly genAI: GoogleGenerativeAI | null = null;
-  private readonly model: any = null;
+  private readonly model: GenerativeModel | null = null;
 
   constructor() {
     // Use react-native-config for environment variables - now using Gemini
@@ -566,7 +566,7 @@ Content: ${content.substring(0, 1000)}`;
     return words.length;
   }
 
-  // Health check method
+  // OPTIMIZED: Health check method with proper boolean return
   async checkAPIHealth(): Promise<boolean> {
     try {
       if (!this.apiKey || !this.model) {
@@ -575,11 +575,49 @@ Content: ${content.substring(0, 1000)}`;
       
       // Test with a simple prompt
       const result = await this.model.generateContent('Test connection');
-      return result && result.response;
+      return !!(result && result.response && result.response.text());
     } catch (error) {
       console.warn('AIService: Health check failed:', error);
       return false;
     }
+  }
+
+  /**
+   * OPTIMIZED: Cleanup method to manage memory usage
+   * Call this when the service is no longer needed to free resources
+   */
+  cleanup(): void {
+    console.log('AIService: Cleaning up resources...');
+    // Reset the singleton instance to allow garbage collection
+    AIService.instance = null as any;
+  }
+
+  /**
+   * OPTIMIZED: Memory-efficient batch processing
+   * Process multiple requests with automatic cleanup between batches
+   */
+  async processBatch<T>(
+    requests: Array<() => Promise<T>>,
+    batchSize: number = 3,
+    delayBetweenBatches: number = 1000
+  ): Promise<T[]> {
+    const results: T[] = [];
+    
+    for (let i = 0; i < requests.length; i += batchSize) {
+      const batch = requests.slice(i, i + batchSize);
+      console.log(`AIService: Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(requests.length / batchSize)}`);
+      
+      // Process batch concurrently
+      const batchResults = await Promise.all(batch.map(request => request()));
+      results.push(...batchResults);
+      
+      // Add delay between batches to prevent rate limiting and reduce memory pressure
+      if (i + batchSize < requests.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+    
+    return results;
   }
 
   /**

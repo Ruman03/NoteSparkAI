@@ -20,7 +20,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 import ToneSelectionScreen from './src/screens/ToneSelectionScreen';
 import EditorScreen from './src/screens/EditorScreen';
-import LibraryScreen from './src/screens/EnhancedLibraryScreen';
+import LibraryScreen from './src/screens/LibraryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import VersionHistoryScreen from './src/screens/VersionHistoryScreen';
