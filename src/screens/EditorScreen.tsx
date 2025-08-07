@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useReducer } from 'react';
 import {
   View,
   StyleSheet,
@@ -39,54 +39,196 @@ import auth from '@react-native-firebase/auth';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'Editor'>;
 
+// OPTIMIZED: Consolidated state management with useReducer
+interface EditorState {
+  isLoading: boolean;
+  isSaving: boolean;
+  noteTitle: string;
+  initialContent: string;
+  wordCount: number;
+  noteId: string | null;
+  toneMode: string;
+  lastContent: string;
+  currentContent: string;
+  isScreenFocused: boolean;
+  showVoiceInput: boolean;
+  isVoiceActive: boolean;
+  activeStyles: string[];
+  isEditorReady: boolean;
+  selectedFolderId: string | null;
+  selectedFolderName: string;
+  showFolderSelector: boolean;
+  showFontMenu: boolean;
+  showColorPicker: boolean;
+  showTableModal: boolean;
+  showMoreMenu: boolean;
+  isOnline: boolean;
+  isSyncing: boolean;
+  showLinkModal: boolean;
+  selectedFontSize: number;
+  linkUrl: string;
+  linkText: string;
+  tableRows: number;
+  tableCols: number;
+}
+
+type EditorAction =
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_SAVING'; payload: boolean }
+  | { type: 'SET_NOTE_TITLE'; payload: string }
+  | { type: 'SET_INITIAL_CONTENT'; payload: string }
+  | { type: 'SET_WORD_COUNT'; payload: number }
+  | { type: 'SET_NOTE_ID'; payload: string | null }
+  | { type: 'SET_CURRENT_CONTENT'; payload: string }
+  | { type: 'SET_SCREEN_FOCUSED'; payload: boolean }
+  | { type: 'SET_VOICE_INPUT'; payload: boolean }
+  | { type: 'SET_VOICE_ACTIVE'; payload: boolean }
+  | { type: 'SET_EDITOR_READY'; payload: boolean }
+  | { type: 'SET_SELECTED_FOLDER'; payload: { id: string | null; name: string } }
+  | { type: 'SET_ACTIVE_STYLES'; payload: string[] }
+  | { type: 'TOGGLE_FOLDER_SELECTOR' }
+  | { type: 'TOGGLE_FONT_MENU' }
+  | { type: 'TOGGLE_COLOR_PICKER' }
+  | { type: 'TOGGLE_TABLE_MODAL' }
+  | { type: 'TOGGLE_LINK_MODAL' }
+  | { type: 'TOGGLE_MORE_MENU' }
+  | { type: 'SET_SYNCING'; payload: boolean }
+  | { type: 'SET_ONLINE'; payload: boolean }
+  | { type: 'SET_FONT_SIZE'; payload: number }
+  | { type: 'SET_TABLE_ROWS'; payload: number }
+  | { type: 'SET_TABLE_COLS'; payload: number }
+  | { type: 'SET_LINK_TEXT'; payload: string }
+  | { type: 'SET_LINK_URL'; payload: string }
+  | { type: 'RESET_MODALS' };
+
+const initialEditorState: EditorState = {
+  isLoading: true,
+  isSaving: false,
+  noteTitle: 'New Note',
+  initialContent: '',
+  wordCount: 0,
+  noteId: null,
+  toneMode: 'standard',
+  lastContent: '',
+  currentContent: '',
+  isScreenFocused: true,
+  showVoiceInput: false,
+  isVoiceActive: false,
+  activeStyles: [],
+  isEditorReady: false,
+  selectedFolderId: null,
+  selectedFolderName: 'Inbox',
+  showFolderSelector: false,
+  showFontMenu: false,
+  showColorPicker: false,
+  showTableModal: false,
+  showMoreMenu: false,
+  isOnline: true,
+  isSyncing: false,
+  showLinkModal: false,
+  selectedFontSize: 16,
+  linkUrl: '',
+  linkText: '',
+  tableRows: 2,
+  tableCols: 2,
+};
+
+function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  switch (action.type) {
+    case 'SET_LOADING':
+      return { ...state, isLoading: action.payload };
+    case 'SET_SAVING':
+      return { ...state, isSaving: action.payload };
+    case 'SET_NOTE_TITLE':
+      return { ...state, noteTitle: action.payload };
+    case 'SET_INITIAL_CONTENT':
+      return { ...state, initialContent: action.payload };
+    case 'SET_WORD_COUNT':
+      return { ...state, wordCount: action.payload };
+    case 'SET_NOTE_ID':
+      return { ...state, noteId: action.payload };
+    case 'SET_CURRENT_CONTENT':
+      return { ...state, currentContent: action.payload };
+    case 'SET_SCREEN_FOCUSED':
+      return { ...state, isScreenFocused: action.payload };
+    case 'SET_VOICE_INPUT':
+      return { ...state, showVoiceInput: action.payload, isVoiceActive: action.payload };
+    case 'SET_VOICE_ACTIVE':
+      return { ...state, isVoiceActive: action.payload };
+    case 'SET_EDITOR_READY':
+      return { ...state, isEditorReady: action.payload };
+    case 'SET_SELECTED_FOLDER':
+      return { 
+        ...state, 
+        selectedFolderId: action.payload.id, 
+        selectedFolderName: action.payload.name 
+      };
+    case 'SET_ACTIVE_STYLES':
+      return { ...state, activeStyles: action.payload };
+    case 'TOGGLE_FOLDER_SELECTOR':
+      return { ...state, showFolderSelector: !state.showFolderSelector };
+    case 'TOGGLE_FONT_MENU':
+      return { ...state, showFontMenu: !state.showFontMenu };
+    case 'TOGGLE_COLOR_PICKER':
+      return { ...state, showColorPicker: !state.showColorPicker };
+    case 'TOGGLE_TABLE_MODAL':
+      return { ...state, showTableModal: !state.showTableModal };
+    case 'TOGGLE_LINK_MODAL':
+      return { ...state, showLinkModal: !state.showLinkModal };
+    case 'TOGGLE_MORE_MENU':
+      return { ...state, showMoreMenu: !state.showMoreMenu };
+    case 'SET_SYNCING':
+      return { ...state, isSyncing: action.payload };
+    case 'SET_ONLINE':
+      return { ...state, isOnline: action.payload };
+    case 'SET_FONT_SIZE':
+      return { ...state, selectedFontSize: action.payload };
+    case 'SET_TABLE_ROWS':
+      return { ...state, tableRows: action.payload };
+    case 'SET_TABLE_COLS':
+      return { ...state, tableCols: action.payload };
+    case 'SET_LINK_TEXT':
+      return { ...state, linkText: action.payload };
+    case 'SET_LINK_URL':
+      return { ...state, linkUrl: action.payload };
+    case 'RESET_MODALS':
+      return { 
+        ...state, 
+        showFontMenu: false, 
+        showColorPicker: false, 
+        showTableModal: false, 
+        showMoreMenu: false, 
+        showLinkModal: false 
+      };
+    default:
+      return state;
+  }
+}
+
 export default function EditorScreen() {
   const theme = useTheme();
   const navigation = useNavigation<EditorScreenNavigationProp>();
   const route = useRoute<EditorRouteProp>();
 
+  // OPTIMIZED: Consolidated state management with useReducer
+  const [state, dispatch] = useReducer(editorReducer, initialEditorState);
+  
+  // Keep essential refs
   const richText = useRef<RichEditor>(null);
   const noteIdRef = useRef<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [noteTitle, setNoteTitle] = useState('New Note');
-  const [initialContent, setInitialContent] = useState('');
-  const [wordCount, setWordCount] = useState(0);
-  const [noteId, setNoteId] = useState<string | null>(null);
-  const [toneMode, setToneMode] = useState<string>('standard');
-  const [lastContent, setLastContent] = useState('');
-  const [currentContent, setCurrentContent] = useState('');
-  const [isScreenFocused, setIsScreenFocused] = useState(true);
-  
-  // Voice input state
-  const [showVoiceInput, setShowVoiceInput] = useState(false);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  
-  // Track active formatting styles for toolbar state
-  const [activeStyles, setActiveStyles] = useState<string[]>([]);
-  
-  // Track editor initialization state
-  const [isEditorReady, setIsEditorReady] = useState(false);
-  
-  // Folder selection state
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [selectedFolderName, setSelectedFolderName] = useState<string>('Inbox');
-  const [showFolderSelector, setShowFolderSelector] = useState(false);
-  
-  // Advanced editor states
-  const [showFontMenu, setShowFontMenu] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showTableModal, setShowTableModal] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [selectedFontSize, setSelectedFontSize] = useState(16);
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkText, setLinkText] = useState('');
-  const [tableRows, setTableRows] = useState(2);
-  const [tableCols, setTableCols] = useState(2);
+  const shouldGenerateTitleRef = useRef(true);
 
-  // Advanced editor functions
+  // Destructure state for easier access
+  const {
+    isLoading, isSaving, noteTitle, initialContent, wordCount, noteId,
+    currentContent, isScreenFocused, showVoiceInput, isVoiceActive,
+    activeStyles, isEditorReady, selectedFolderId, selectedFolderName,
+    showFolderSelector, showFontMenu, showColorPicker, showTableModal,
+    showMoreMenu, isOnline, isSyncing, showLinkModal, selectedFontSize,
+    linkUrl, linkText, tableRows, tableCols
+  } = state;
+
+  // OPTIMIZED: Advanced editor functions using dispatch
   const insertTable = useCallback(() => {
     if (richText.current) {
       let tableHtml = '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
@@ -100,7 +242,7 @@ export default function EditorScreen() {
       tableHtml += '</table>';
       
       richText.current.insertHTML(tableHtml);
-      setShowTableModal(false);
+      dispatch({ type: 'RESET_MODALS' });
     }
   }, [tableRows, tableCols]);
 
@@ -111,9 +253,7 @@ export default function EditorScreen() {
       if (urlPattern.test(linkUrl)) {
         const linkHtml = `<a href="${linkUrl}" style="color: #007bff; text-decoration: underline;">${linkText}</a>`;
         richText.current.insertHTML(linkHtml);
-        setShowLinkModal(false);
-        setLinkUrl('');
-        setLinkText('');
+        dispatch({ type: 'RESET_MODALS' });
       } else {
         // Alert the user if the URL is invalid
         Alert.alert("Invalid URL", "Please enter a valid URL starting with http://, https://, or ftp://");
@@ -121,30 +261,30 @@ export default function EditorScreen() {
     }
   }, [linkUrl, linkText]);
 
-  // Voice input handlers
+  // OPTIMIZED: Voice input handlers with proper dependencies and cleanup
   const handleVoiceTranscription = useCallback((text: string, isFinal: boolean) => {
-    if (richText.current && text.trim()) {
-      if (isFinal) {
-        // Insert the final transcription at current cursor position
-        const formattedText = text.endsWith('.') ? text : text + '.';
-        richText.current.insertText(formattedText + ' ');
-        
-        // Update current content for auto-save
-        richText.current.getContentHtml().then((html) => {
-          setCurrentContent(html);
-        });
-      }
+    if (!isEditorReady || !text.trim()) return;
+    
+    if (isFinal && richText.current) {
+      // Insert the final transcription at current cursor position
+      const formattedText = text.endsWith('.') ? text : text + '.';
+      richText.current.insertText(formattedText + ' ');
+      
+      // Update current content for auto-save using async operation
+      richText.current.getContentHtml().then((html) => {
+        dispatch({ type: 'SET_CURRENT_CONTENT', payload: html });
+      }).catch(console.error);
     }
-  }, []);
+  }, [isEditorReady]);
 
   const handleVoiceError = useCallback((error: string) => {
-    setIsVoiceActive(false);
+    dispatch({ type: 'SET_VOICE_ACTIVE', payload: false });
     console.error('Voice input error:', error);
     Alert.alert('Voice Input Error', error);
   }, []);
 
   const handleVoiceSessionComplete = useCallback((metrics: any) => {
-    setIsVoiceActive(false);
+    dispatch({ type: 'SET_VOICE_ACTIVE', payload: false });
     console.log('Voice session completed:', metrics);
     
     // Log analytics event
@@ -156,8 +296,8 @@ export default function EditorScreen() {
   }, []);
 
   const toggleVoiceInput = useCallback(() => {
-    setShowVoiceInput(!showVoiceInput);
-  }, [showVoiceInput]);
+    dispatch({ type: 'SET_VOICE_INPUT', payload: !showVoiceInput });
+  }, []);
 
   const setFontSize = useCallback((size: number) => {
     if (richText.current) {
@@ -172,22 +312,22 @@ export default function EditorScreen() {
       else fontSize = 7;
       
       richText.current.setFontSize(fontSize);
-      setSelectedFontSize(size);
-      setShowFontMenu(false);
+      dispatch({ type: 'SET_FONT_SIZE', payload: size });
+      dispatch({ type: 'TOGGLE_FONT_MENU' });
     }
   }, []);
 
   const setTextColor = useCallback((color: string) => {
     if (richText.current) {
       richText.current.setForeColor(color);
-      setShowColorPicker(false);
+      dispatch({ type: 'RESET_MODALS' });
     }
   }, []);
 
   const setHighlightColor = useCallback((color: string) => {
     if (richText.current) {
       richText.current.setHiliteColor(color);
-      setShowColorPicker(false);
+      dispatch({ type: 'RESET_MODALS' });
     }
   }, []);
 
@@ -199,7 +339,7 @@ export default function EditorScreen() {
 
   // More menu actions
   const executeBlockquote = useCallback(async () => {
-    setShowMoreMenu(false);
+    dispatch({ type: 'TOGGLE_MORE_MENU' });
     if (richText.current) {
       richText.current.focusContentEditor();
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -208,7 +348,7 @@ export default function EditorScreen() {
   }, []);
 
   const executeHorizontalRule = useCallback(() => {
-    setShowMoreMenu(false);
+    dispatch({ type: 'TOGGLE_MORE_MENU' });
     insertHorizontalRule();
   }, [insertHorizontalRule]);
 
@@ -232,7 +372,7 @@ export default function EditorScreen() {
   };
 
   const executeStrikethrough = useCallback(async () => {
-    setShowMoreMenu(false);
+    dispatch({ type: 'TOGGLE_MORE_MENU' });
     if (richText.current) {
       richText.current.focusContentEditor();
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -266,10 +406,10 @@ export default function EditorScreen() {
   useFocusEffect(
     React.useCallback(() => {
       console.log('EditorScreen: Screen focused');
-      setIsScreenFocused(true);
+      dispatch({ type: 'SET_SCREEN_FOCUSED', payload: true });
       return () => {
         console.log('EditorScreen: Screen unfocused');
-        setIsScreenFocused(false);
+        dispatch({ type: 'SET_SCREEN_FOCUSED', payload: false });
       };
     }, [])
   );
@@ -288,7 +428,7 @@ export default function EditorScreen() {
           return '';
         }).filter(Boolean);
         
-        setActiveStyles(styles);
+        dispatch({ type: 'SET_ACTIVE_STYLES', payload: styles });
       });
     }
   }, [initialContent]); // Re-register when content is loaded
@@ -307,7 +447,7 @@ export default function EditorScreen() {
   const saveNoteContent = useCallback(async (content: string, noteIdToSave: string) => {
     if (!content || !isScreenFocused) return;
     
-    setIsSyncing(true); // Start syncing indicator
+    dispatch({ type: 'SET_SYNCING', payload: true }); // Start syncing indicator
     
     try {
       const notesService = NotesService.getInstance();
@@ -322,7 +462,7 @@ export default function EditorScreen() {
         const aiService = AIService.getInstance();
         const textContent = content.replace(/<[^>]*>/g, '');
         currentTitle = await aiService.generateNoteTitle(textContent);
-        setNoteTitle(currentTitle);
+        dispatch({ type: 'SET_NOTE_TITLE', payload: currentTitle });
         shouldGenerateTitleRef.current = false;
       }
 
@@ -354,17 +494,17 @@ export default function EditorScreen() {
           createdAt: new Date(),
           updatedAt: new Date()
         });
-        setNoteId(newNoteId);
+        dispatch({ type: 'SET_NOTE_ID', payload: newNoteId });
         noteIdRef.current = newNoteId;
       }
 
-      setIsOnline(true); // Successful save indicates we're online
+      dispatch({ type: 'SET_ONLINE', payload: true }); // Successful save indicates we're online
     } catch (error) {
       console.error('Save failed:', error);
-      setIsOnline(false); // Failed save might indicate network issues
+      dispatch({ type: 'SET_ONLINE', payload: false }); // Failed save might indicate network issues
       throw error;
     } finally {
-      setIsSyncing(false); // End syncing indicator
+      dispatch({ type: 'SET_SYNCING', payload: false }); // End syncing indicator
     }
   }, [isScreenFocused, noteTitle, tone, originalText, routeNoteId]);
 
@@ -390,58 +530,49 @@ export default function EditorScreen() {
     }
   );
 
-  // Initialize noteId with routeNoteId when editing existing notes
-  useEffect(() => {
+  // OPTIMIZED: Combined all initialization effects into single useLayoutEffect
+  useLayoutEffect(() => {
+    // Initialize noteId with routeNoteId when editing existing notes
     if (routeNoteId && !noteId) {
-      setNoteId(routeNoteId);
+      dispatch({ type: 'SET_NOTE_ID', payload: routeNoteId });
       console.log('EditorScreen: Setting noteId from route params:', routeNoteId);
     }
-  }, [routeNoteId, noteId]);
 
-  // Initialize noteTitle with routeNoteTitle when editing existing notes
-  useEffect(() => {
+    // Initialize noteTitle with routeNoteTitle when editing existing notes
     if (routeNoteTitle && noteTitle === 'New Note') {
-      setNoteTitle(routeNoteTitle);
+      dispatch({ type: 'SET_NOTE_TITLE', payload: routeNoteTitle });
       shouldGenerateTitleRef.current = false; // Don't regenerate existing titles
       console.log('EditorScreen: Setting noteTitle from route params:', routeNoteTitle);
     }
-  }, [routeNoteTitle, noteTitle]);
 
-  // Initialize folder selection from route parameters
-  useEffect(() => {
+    // Initialize folder selection from route parameters
     if (routeFolderId !== undefined) {
-      setSelectedFolderId(routeFolderId);
+      dispatch({ type: 'SET_SELECTED_FOLDER', payload: { id: routeFolderId, name: routeFolderName || 'Inbox' } });
       console.log('EditorScreen: Setting selectedFolderId from route params:', routeFolderId);
     }
     if (routeFolderName) {
-      setSelectedFolderName(routeFolderName);
       console.log('EditorScreen: Setting selectedFolderName from route params:', routeFolderName);
     }
-  }, [routeFolderId, routeFolderName]);
 
-  // Update ref when noteId changes
-  useEffect(() => {
+    // Update ref when noteId changes
     noteIdRef.current = noteId;
-  }, [noteId]);
-
-  // Keep necessary refs for compatibility
-  const shouldGenerateTitleRef = useRef(true);
+  }, [routeNoteId, noteId, routeNoteTitle, noteTitle, routeFolderId, routeFolderName]);
 
   useEffect(() => {
     const processNote = async () => {
-      setIsLoading(true);
+      dispatch({ type: 'SET_LOADING', payload: true });
       try {
         if (noteText) {
           if (routeNoteId) {
             // Editing existing note - use content and title as-is
             console.log('EditorScreen: Processing existing note for editing');
-            setInitialContent(noteText); // noteText is already HTML for existing notes
-            setCurrentContent(noteText); // Initialize adaptive auto-save content
+            dispatch({ type: 'SET_INITIAL_CONTENT', payload: noteText }); // noteText is already HTML for existing notes
+            dispatch({ type: 'SET_CURRENT_CONTENT', payload: noteText }); // Initialize adaptive auto-save content
             
             // Calculate word count from HTML content
             const plainText = noteText.replace(/<[^>]*>/g, '');
             const words = plainText.trim().split(/\s+/).filter(word => word.length > 0);
-            setWordCount(words.length);
+            dispatch({ type: 'SET_WORD_COUNT', payload: words.length });
             
             // Title should already be set from routeNoteTitle in the useEffect above
             console.log('EditorScreen: Existing note processed, title:', noteTitle);
@@ -450,7 +581,7 @@ export default function EditorScreen() {
             console.log('EditorScreen: Processing new note from scanned text');
             const aiService = AIService.getInstance();
             const title = await aiService.generateNoteTitle(noteText);
-            setNoteTitle(title);
+            dispatch({ type: 'SET_NOTE_TITLE', payload: title });
             shouldGenerateTitleRef.current = false; // Mark title as generated
             
             // Convert plain text to HTML for rich text editor
@@ -458,85 +589,102 @@ export default function EditorScreen() {
               .split('\n\n')
               .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
               .join('');
-            setInitialContent(htmlContent);
-            setCurrentContent(htmlContent); // Initialize adaptive auto-save content
+            dispatch({ type: 'SET_INITIAL_CONTENT', payload: htmlContent });
+            dispatch({ type: 'SET_CURRENT_CONTENT', payload: htmlContent }); // Initialize adaptive auto-save content
             
             // Calculate initial word count
             const words = noteText.trim().split(/\s+/).filter(word => word.length > 0);
-            setWordCount(words.length);
+            dispatch({ type: 'SET_WORD_COUNT', payload: words.length });
             console.log('EditorScreen: New note processed, title:', title);
           }
         }
       } catch (error) {
         console.error("Failed to process note:", error);
-        setInitialContent('<p>Failed to load content. Please try again.</p>');
+        dispatch({ type: 'SET_INITIAL_CONTENT', payload: '<p>Failed to load content. Please try again.</p>' });
       } finally {
-        setIsLoading(false);
+        dispatch({ type: 'SET_LOADING', payload: false });
       }
     };
 
     processNote();
   }, [noteText, routeNoteId]);
 
-  const handleSave = async () => {
-    if (!richText.current) return;
+  // OPTIMIZED: Simplified manual save with clear separation of concerns
+  const handleSave = useCallback(async () => {
+    if (!richText.current || !currentUser) return;
     
     try {
-      setIsSaving(true);
+      dispatch({ type: 'SET_SAVING', payload: true });
       const html = await richText.current.getContentHtml();
       const textContent = html.replace(/<[^>]*>/g, '').trim();
       
       if (textContent.length === 0) {
         Alert.alert('Error', 'Please add some content before saving.');
-        setIsSaving(false);
         return;
       }
       
-      // Check if this is a new note (no routeNoteId means it's a new note)
+      const notesService = NotesService.getInstance();
       const isNewNote = !routeNoteId;
       
-      // Update current content to trigger adaptive auto-save
-      setCurrentContent(html);
-      
-      // Trigger manual save through versioning hook
-      await manualSave();
-      
-      hapticService.success();
-      
       if (isNewNote) {
-        // For new notes, show success and redirect to library
-        Alert.alert(
-          'Success', 
-          'Note saved successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigate to the MainTabs with Library screen focused
-                navigation.navigate('MainTabs', { screen: 'Library' });
-              }
-            }
-          ]
-        );
+        await createNewNote(notesService, html, textContent);
       } else {
-        // For existing notes, just show success message and stay on editor
-        Alert.alert('Success', 'Note updated successfully!');
+        await updateExistingNote(html);
       }
       
-      setIsSaving(false);
+      hapticService.success();
+      const message = isNewNote ? 'Note saved successfully!' : 'Note updated successfully!';
+      Alert.alert('Success', message, [
+        {
+          text: 'OK',
+          onPress: isNewNote ? () => navigation.navigate('MainTabs', { screen: 'Library' }) : undefined
+        }
+      ]);
+      
     } catch (error) {
-      console.error('Manual save failed:', error);
-      setIsSaving(false);
+      console.error('Save failed:', error);
       hapticService.error();
       Alert.alert('Error', 'Failed to save note. Please try again.');
+    } finally {
+      dispatch({ type: 'SET_SAVING', payload: false });
     }
-  };
+  }, [routeNoteId, currentUser, noteTitle, selectedFolderId, originalText, navigation]);
+
+  // Helper function for creating new notes
+  const createNewNote = useCallback(async (notesService: any, html: string, textContent: string) => {
+    const newNoteId = await notesService.saveNote(currentUser!.uid, {
+      title: noteTitle,
+      content: html,
+      plainText: textContent,
+      folderId: selectedFolderId,
+      tone: 'professional',
+      originalText: originalText || '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      tags: []
+    });
+    
+    console.log('EditorScreen: New note created with ID:', newNoteId);
+    dispatch({ type: 'SET_NOTE_ID', payload: newNoteId });
+    
+    // Update navigation params
+    navigation.setParams({ 
+      noteId: newNoteId,
+      folderId: selectedFolderId 
+    });
+  }, [currentUser, noteTitle, selectedFolderId, originalText, navigation]);
+
+  // Helper function for updating existing notes
+  const updateExistingNote = useCallback(async (html: string) => {
+    dispatch({ type: 'SET_CURRENT_CONTENT', payload: html });
+    await manualSave();
+  }, [manualSave]);
 
   const regenerateWithDifferentTone = async (newTone: string) => {
     if (!originalText) return;
     
     try {
-      setIsLoading(true);
+      dispatch({ type: 'SET_LOADING', payload: true });
       const request: AITransformationRequest = {
         text: originalText,
         tone: newTone as 'professional' | 'casual' | 'simplified',
@@ -546,7 +694,7 @@ export default function EditorScreen() {
       const response = await aiService.transformTextToNote(request);
       
       const title = await aiService.generateNoteTitle(response.transformedText);
-      setNoteTitle(title);
+      dispatch({ type: 'SET_NOTE_TITLE', payload: title });
       shouldGenerateTitleRef.current = false; // Mark title as generated
       
       const htmlContent = response.transformedText
@@ -556,7 +704,7 @@ export default function EditorScreen() {
       
       if (richText.current) {
         richText.current.setContentHTML(htmlContent);
-        setCurrentContent(htmlContent); // Update adaptive auto-save content
+        dispatch({ type: 'SET_CURRENT_CONTENT', payload: htmlContent }); // Update adaptive auto-save content
         hapticService.success();
       }
     } catch (error) {
@@ -564,14 +712,13 @@ export default function EditorScreen() {
       hapticService.error();
       Alert.alert('Error', 'Failed to regenerate content. Please try again.');
     } finally {
-      setIsLoading(false);
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
 
   // Folder selection handlers
   const handleFolderSelected = useCallback((folderId: string | null, folderName?: string) => {
-    setSelectedFolderId(folderId);
-    setSelectedFolderName(folderName || 'Inbox');
+    dispatch({ type: 'SET_SELECTED_FOLDER', payload: { id: folderId, name: folderName || 'Inbox' } });
     hapticService.light();
   }, []);
 
@@ -595,13 +742,13 @@ export default function EditorScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title={noteTitle} titleStyle={[styles.headerTitle, { color: theme.colors.onSurface }]} />
-        {noteId && (
+        {(noteId || routeNoteId) && (
           <IconButton
             icon="history"
             size={24}
             iconColor={theme.colors.onSurface}
             onPress={() => navigation.navigate('VersionHistory', { 
-              noteId, 
+              noteId: (noteId || routeNoteId)!, 
               noteTitle 
             })}
             style={{ marginRight: 8 }}
@@ -622,7 +769,7 @@ export default function EditorScreen() {
       <View style={[styles.folderSection, { backgroundColor: theme.colors.surface }]}>
         <Chip
           icon={selectedFolderId ? 'folder' : 'inbox'}
-          onPress={() => setShowFolderSelector(true)}
+          onPress={() => dispatch({ type: 'TOGGLE_FOLDER_SELECTOR' })}
           style={[styles.folderChip, { backgroundColor: theme.colors.primaryContainer }]}
           textStyle={{ color: theme.colors.onPrimaryContainer }}
         >
@@ -661,13 +808,13 @@ export default function EditorScreen() {
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
             {wordCount} words
           </Text>
-          {noteId && (
+          {(noteId || routeNoteId) && (
             <IconButton
               icon="history"
               size={16}
               iconColor={theme.colors.onSurfaceVariant}
               onPress={() => navigation.navigate('VersionHistory', { 
-                noteId, 
+                noteId: (noteId || routeNoteId)!, 
                 noteTitle 
               })}
               style={{ margin: 0, padding: 4 }}
@@ -686,7 +833,7 @@ export default function EditorScreen() {
               placeholder="Start writing your amazing notes..."
               editorInitializedCallback={() => {
                 console.log('Editor fully initialized and ready!');
-                setIsEditorReady(true);
+                dispatch({ type: 'SET_EDITOR_READY', payload: true });
               }}
               editorStyle={{
                 backgroundColor: theme.colors.surface,
@@ -701,12 +848,12 @@ export default function EditorScreen() {
               }}
               onChange={(content) => {
                 // Update current content for adaptive auto-save
-                setCurrentContent(content);
+                dispatch({ type: 'SET_CURRENT_CONTENT', payload: content });
                 
                 // Update word count on content change
                 const textContent = content.replace(/<[^>]*>/g, '');
                 const words = textContent.trim().split(/\s+/).filter(word => word.length > 0);
-                setWordCount(words.length);
+                dispatch({ type: 'SET_WORD_COUNT', payload: words.length });
                 
                 // Note: Auto-save is now handled by the useAdaptiveAutoSave hook
                 // The hook automatically triggers saves based on user patterns and content changes
@@ -761,12 +908,12 @@ export default function EditorScreen() {
           <View style={styles.toolbarGroup}>
             <Menu
               visible={showFontMenu}
-              onDismiss={() => setShowFontMenu(false)}
+              onDismiss={() => dispatch({ type: 'TOGGLE_FONT_MENU' })}
               anchor={
                 <Button 
                   mode="outlined" 
                   compact 
-                  onPress={() => setShowFontMenu(true)}
+                  onPress={() => dispatch({ type: 'TOGGLE_FONT_MENU' })}
                   style={styles.fontSizeButton}
                 >
                   {selectedFontSize}px
@@ -842,13 +989,13 @@ export default function EditorScreen() {
           <View style={styles.toolbarGroup}>
             <Menu
               visible={showColorPicker}
-              onDismiss={() => setShowColorPicker(false)}
+              onDismiss={() => dispatch({ type: 'TOGGLE_COLOR_PICKER' })}
               anchor={
                 <IconButton
                   icon="palette"
                   size={20}
                   iconColor={theme.colors.onSurface}
-                  onPress={() => setShowColorPicker(true)}
+                  onPress={() => dispatch({ type: 'TOGGLE_COLOR_PICKER' })}
                   style={styles.toolbarButton}
                 />
               }
@@ -1053,25 +1200,25 @@ export default function EditorScreen() {
               icon="table"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => setShowTableModal(true)}
+              onPress={() => dispatch({ type: 'TOGGLE_TABLE_MODAL' })}
               style={styles.toolbarButton}
             />
             <IconButton
               icon="link"
               size={20}
               iconColor={theme.colors.onSurface}
-              onPress={() => setShowLinkModal(true)}
+              onPress={() => dispatch({ type: 'TOGGLE_LINK_MODAL' })}
               style={styles.toolbarButton}
             />
             <Menu
               visible={showMoreMenu}
-              onDismiss={() => setShowMoreMenu(false)}
+              onDismiss={() => dispatch({ type: 'TOGGLE_MORE_MENU' })}
               anchor={
                 <IconButton
                   icon="dots-horizontal"
                   size={20}
                   iconColor={theme.colors.onSurface}
-                  onPress={() => setShowMoreMenu(true)}
+                  onPress={() => dispatch({ type: 'TOGGLE_MORE_MENU' })}
                   style={styles.toolbarButton}
                 />
               }
@@ -1123,7 +1270,7 @@ export default function EditorScreen() {
         <Portal>
           <Modal
             visible={showVoiceInput}
-            onDismiss={() => setShowVoiceInput(false)}
+            onDismiss={() => dispatch({ type: 'SET_VOICE_INPUT', payload: false })}
             contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
           >
             <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
@@ -1143,7 +1290,7 @@ export default function EditorScreen() {
       <Portal>
         <Modal
           visible={showTableModal}
-          onDismiss={() => setShowTableModal(false)}
+          onDismiss={() => dispatch({ type: 'TOGGLE_TABLE_MODAL' })}
           contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
         >
           <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
@@ -1156,7 +1303,7 @@ export default function EditorScreen() {
               <TextInput
                 mode="outlined"
                 value={tableRows.toString()}
-                onChangeText={(text) => setTableRows(parseInt(text) || 2)}
+                onChangeText={(text) => dispatch({ type: 'SET_TABLE_ROWS', payload: parseInt(text) || 2 })}
                 keyboardType="numeric"
                 style={styles.tableInput}
               />
@@ -1167,7 +1314,7 @@ export default function EditorScreen() {
               <TextInput
                 mode="outlined"
                 value={tableCols.toString()}
-                onChangeText={(text) => setTableCols(parseInt(text) || 2)}
+                onChangeText={(text) => dispatch({ type: 'SET_TABLE_COLS', payload: parseInt(text) || 2 })}
                 keyboardType="numeric"
                 style={styles.tableInput}
               />
@@ -1175,7 +1322,7 @@ export default function EditorScreen() {
           </View>
           
           <View style={styles.modalActions}>
-            <Button mode="outlined" onPress={() => setShowTableModal(false)} style={styles.modalButton}>
+            <Button mode="outlined" onPress={() => dispatch({ type: 'TOGGLE_TABLE_MODAL' })} style={styles.modalButton}>
               Cancel
             </Button>
             <Button mode="contained" onPress={insertTable} style={styles.modalButton}>
@@ -1189,7 +1336,7 @@ export default function EditorScreen() {
       <Portal>
         <Modal
           visible={showLinkModal}
-          onDismiss={() => setShowLinkModal(false)}
+          onDismiss={() => dispatch({ type: 'TOGGLE_LINK_MODAL' })}
           contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
         >
           <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
@@ -1200,7 +1347,7 @@ export default function EditorScreen() {
             mode="outlined"
             label="Link Text"
             value={linkText}
-            onChangeText={setLinkText}
+            onChangeText={(text) => dispatch({ type: 'SET_LINK_TEXT', payload: text })}
             style={styles.linkInput}
           />
           
@@ -1208,13 +1355,13 @@ export default function EditorScreen() {
             mode="outlined"
             label="URL"
             value={linkUrl}
-            onChangeText={setLinkUrl}
+            onChangeText={(text) => dispatch({ type: 'SET_LINK_URL', payload: text })}
             style={styles.linkInput}
             autoCapitalize="none"
           />
           
           <View style={styles.modalActions}>
-            <Button mode="outlined" onPress={() => setShowLinkModal(false)} style={styles.modalButton}>
+            <Button mode="outlined" onPress={() => dispatch({ type: 'TOGGLE_LINK_MODAL' })} style={styles.modalButton}>
               Cancel
             </Button>
             <Button 
@@ -1266,7 +1413,7 @@ export default function EditorScreen() {
     {/* Folder Selector Modal */}
     <FolderSelector
       visible={showFolderSelector}
-      onDismiss={() => setShowFolderSelector(false)}
+      onDismiss={() => dispatch({ type: 'TOGGLE_FOLDER_SELECTOR' })}
       onFolderSelected={handleFolderSelected}
       selectedFolderId={selectedFolderId}
       title="Select Folder for Note"

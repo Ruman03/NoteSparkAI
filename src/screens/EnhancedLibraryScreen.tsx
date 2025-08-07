@@ -2,703 +2,831 @@
 // NoteSpark AI - Enhanced Library with Folder Organization
 // Professional library management with folder navigation and organization tools
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  Alert,
-  TouchableOpacity,
-  Dimensions,
-} from 'react-native';
-import {
-  Appbar,
-  Card,
-  Text,
-  Button,
-  IconButton,
-  useTheme,
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { 
+  View, 
+  StyleSheet, 
+  RefreshControl, 
   ActivityIndicator,
-  Chip,
-  Surface,
-  Searchbar,
+  Dimensions,
+  Alert,
+  StatusBar,
+  Platform,
+} from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  interpolate,
+  runOnJS,
+  useAnimatedScrollHandler,
+  interpolateColor,
+} from 'react-native-reanimated';
+import { FlashList } from '@shopify/flash-list';
+import { 
+  Text, 
+  useTheme, 
   FAB,
-  Menu,
-  Divider,
-  Avatar,
+  SegmentedButtons,
+  Surface,
+  Chip,
+  IconButton,
+  Badge,
 } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { formatDistanceToNow } from 'date-fns';
-import { useFolders } from '../contexts/FolderContext';
-import { useAuth } from '../contexts/AuthContext';
-import { Folder, Note } from '../types/folders';
-import { hapticService } from '../services/HapticService';
-import AppIcon from '../components/AppIcon';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { DocumentPickerResponse, pick, types } from '@react-native-documents/picker';
+
 import type { LibraryScreenNavigationProp } from '../types/navigation';
+import { NotesService } from '../services/NotesService';
+import type { Note } from '../types';
+import type { Folder } from '../types/folders';
+import auth from '@react-native-firebase/auth';
+
+import { hapticService } from '../services/HapticService';
+import { useFolders } from '../contexts/FolderContext';
+import LibraryHeader from '../components/library/LibraryHeader';
+import NoteCard from '../components/library/NoteCard';
+import FolderCard from '../components/library/FolderCard';
+import LibraryEmptyState from '../components/library/LibraryEmptyState';
+import NoteActionsModal from '../components/library/NoteActionsModal';
+
+const { width, height } = Dimensions.get('window');
+const HEADER_HEIGHT = 180;
+const CARD_MARGIN = 8;
+const GRID_ITEM_WIDTH = (width - 32 - CARD_MARGIN) / 2;
 
 interface EnhancedLibraryScreenProps {
   navigation: LibraryScreenNavigationProp;
 }
 
-type ViewMode = 'folders' | 'notes' | 'search';
-type SortMode = 'updated' | 'created' | 'alphabetical' | 'size';
+// Performance optimization constants
+const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const AUTO_REFRESH_INTERVAL = 30 * 1000; // 30 seconds
+const SCROLL_THRESHOLD = 100;
 
 const EnhancedLibraryScreen: React.FC<EnhancedLibraryScreenProps> = ({ navigation }) => {
   const theme = useTheme();
-  const { user } = useAuth();
-  const {
-    folders,
-    currentFolder,
-    isLoading,
-    error,
+  const notesService = NotesService.getInstance();
+  const { 
+    folders, 
+    currentFolder, 
+    isLoading: foldersLoading, 
     refreshFolders,
-    setCurrentFolder,
-    navigateToFolder,
     getNotesInFolder,
-    createFolder,
-    deleteFolder,
-    searchFoldersAndNotes,
-    availableColors,
-    availableIcons,
+    navigateToFolder,
+    setCurrentFolder,
+    createFolder
   } = useFolders();
 
-  // Local state
-  const [viewMode, setViewMode] = useState<ViewMode>('folders');
+  // Enhanced state management
   const [notes, setNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ folders: Folder[]; notes: Note[] }>({ folders: [], notes: [] });
-  const [refreshing, setRefreshing] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>('updated');
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [showViewMenu, setShowViewMenu] = useState(false);
-  const [folderMenuVisible, setFolderMenuVisible] = useState<{[key: string]: boolean}>({});
-  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
-  const [isGridView, setIsGridView] = useState(false);
+  const [selectedTone, setSelectedTone] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortBy, setSortBy] = useState<'date' | 'title' | 'tone'>('date');
+  const [contentType, setContentType] = useState<'folders' | 'notes'>('folders');
+  
+  // Advanced UI state
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [fabVisible, setFabVisible] = useState(true);
+  
+  // Actions modal state
+  const [showActionsModal, setShowActionsModal] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
 
-  // Load data on focus
-  useFocusEffect(
-    useCallback(() => {
-      if (viewMode === 'folders') {
-        refreshFolders();
-      } else if (viewMode === 'notes') {
-        loadNotesForCurrentFolder();
+  // Animation values for premium UX
+  const scrollY = useSharedValue(0);
+  const transitionProgress = useSharedValue(0);
+  const searchProgress = useSharedValue(0);
+  const refreshProgress = useSharedValue(0);
+
+  // Performance caching with intelligent invalidation
+  const [notesCache, setNotesCache] = useState<Record<string, Note[]>>({});
+  const [lastRefresh, setLastRefresh] = useState<Record<string, number>>({});
+  const [cacheStats, setCacheStats] = useState({ hits: 0, misses: 0 });
+  
+  // Auto-refresh timer
+  const autoRefreshTimer = useRef<NodeJS.Timeout | null>(null);
+  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Enhanced scroll handler with performance optimizations
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+      
+      // Intelligent header collapsing
+      const shouldCollapse = event.contentOffset.y > SCROLL_THRESHOLD;
+      if (shouldCollapse !== headerCollapsed) {
+        runOnJS(setHeaderCollapsed)(shouldCollapse);
       }
-    }, [viewMode, currentFolder])
-  );
+      
+      // FAB visibility based on scroll direction
+      if (event.contentOffset.y > 50) {
+        if (fabVisible) runOnJS(setFabVisible)(false);
+      } else {
+        if (!fabVisible) runOnJS(setFabVisible)(true);
+      }
+    },
+  });
 
-  // Load notes for current folder
-  const loadNotesForCurrentFolder = useCallback(async () => {
-    try {
-      const folderNotes = await getNotesInFolder(currentFolder?.id || null, true);
-      setNotes(folderNotes);
-    } catch (error) {
-      console.error('Error loading notes:', error);
-    }
-  }, [currentFolder?.id, getNotesInFolder]);
-
-  // Handle refresh
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    hapticService.light();
-    
-    if (viewMode === 'folders') {
-      await refreshFolders();
-    } else if (viewMode === 'notes') {
-      await loadNotesForCurrentFolder();
-    } else if (viewMode === 'search' && searchQuery) {
-      await handleSearch(searchQuery);
-    }
-    
-    setRefreshing(false);
-  }, [viewMode, refreshFolders, loadNotesForCurrentFolder, searchQuery]);
-
-  // Handle search
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults({ folders: [], notes: [] });
+  // Intelligent data loading with advanced caching
+  const loadNotesWithCache = useCallback(async (forceRefresh: boolean = false) => {
+    const user = auth().currentUser;
+    if (!user) {
+      console.error('LibraryScreen: No authenticated user found');
+      setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
     try {
-      const results = await searchFoldersAndNotes(query);
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Search error:', error);
-    }
-  }, [searchFoldersAndNotes]);
+      const cacheKey = currentFolder?.id || 'all_notes';
+      const now = Date.now();
+      
+      // Smart cache strategy
+      const cacheEntry = notesCache[cacheKey];
+      const lastRefreshTime = lastRefresh[cacheKey];
+      const isCacheValid = cacheEntry && lastRefreshTime && (now - lastRefreshTime) < CACHE_TIMEOUT;
+      
+      if (!forceRefresh && isCacheValid) {
+        console.log('📦 Cache hit for:', cacheKey);
+        setCacheStats(prev => ({ ...prev, hits: prev.hits + 1 }));
+        setNotes(cacheEntry);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
 
-  // Handle folder selection
+      console.log('🔄 Cache miss, fetching fresh data for:', cacheKey);
+      setCacheStats(prev => ({ ...prev, misses: prev.misses + 1 }));
+      setIsLoading(true);
+      
+      let userNotes: Note[];
+      if (currentFolder) {
+        // Load notes from folder using the service
+        const folderNotes = await getNotesInFolder(currentFolder.id);
+        // Convert folder notes to match Note interface with proper type casting
+        userNotes = folderNotes.map(note => ({
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          plainText: note.content || '',
+          tone: (note.tone as 'professional' | 'casual' | 'simplified') || 'professional',
+          wordCount: note.wordCount || 0,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+          userId: user.uid,
+          createdBy: note.createdBy,
+          tags: note.tags || [],
+          isStarred: false,
+          folderId: note.folderId,
+        }));
+      } else {
+        const allNotes = await notesService.getUserNotes(user.uid);
+        userNotes = allNotes.filter(note => !note.folderId || note.folderId === '');
+      }
+      
+      console.log(`📝 Loaded ${userNotes.length} notes for ${currentFolder?.name || 'All Notes'}`);
+      
+      // Update cache with metadata
+      setNotesCache(prev => ({
+        ...prev,
+        [cacheKey]: userNotes
+      }));
+      setLastRefresh(prev => ({
+        ...prev,
+        [cacheKey]: now
+      }));
+      
+      setNotes(userNotes);
+    } catch (error) {
+      console.error('❌ Failed to load notes:', error);
+      setNotes([]);
+      Alert.alert('Error', 'Failed to load notes. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [currentFolder, notesCache, lastRefresh, getNotesInFolder]);
+
+  // Auto-refresh setup for real-time updates
+  useEffect(() => {
+    if (autoRefreshTimer.current) {
+      clearInterval(autoRefreshTimer.current);
+    }
+    
+    autoRefreshTimer.current = setInterval(() => {
+      if (!isLoading && !isRefreshing) {
+        console.log('🔄 Auto-refreshing data...');
+        if (contentType === 'folders') {
+          refreshFolders();
+        } else {
+          loadNotesWithCache(true);
+        }
+      }
+    }, AUTO_REFRESH_INTERVAL);
+
+    return () => {
+      if (autoRefreshTimer.current) {
+        clearInterval(autoRefreshTimer.current);
+      }
+    };
+  }, [contentType, isLoading, isRefreshing, refreshFolders, loadNotesWithCache]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (contentType === 'folders') {
+        refreshFolders();
+      } else {
+        loadNotesWithCache();
+      }
+    }, [contentType, refreshFolders, loadNotesWithCache])
+  );
+
+  // Enhanced filtering and sorting with search optimization
+  const processedData = useMemo(() => {
+    let data: (Note | Folder)[] = [];
+    
+    if (contentType === 'folders') {
+      data = folders.filter(folder => {
+        if (searchQuery && searchQuery.trim().length > 0) {
+          const queryLower = searchQuery.toLowerCase().trim();
+          return folder.name.toLowerCase().includes(queryLower) ||
+                 (folder.description && folder.description.toLowerCase().includes(queryLower));
+        }
+        return true;
+      });
+    } else {
+      let filtered = [...notes];
+
+      // Advanced search across multiple fields
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const queryLower = searchQuery.toLowerCase().trim();
+        filtered = filtered.filter(note => 
+          (note.title && note.title.toLowerCase().includes(queryLower)) ||
+          (note.plainText && note.plainText.toLowerCase().includes(queryLower)) ||
+          (note.tags && note.tags.some(tag => tag.toLowerCase().includes(queryLower))) ||
+          (note.content && note.content.toLowerCase().includes(queryLower))
+        );
+      }
+
+      // Tone filtering
+      if (selectedTone) {
+        filtered = filtered.filter(note => note.tone === selectedTone);
+      }
+
+      // Enhanced sorting with multiple criteria
+      filtered.sort((a, b) => {
+        switch (sortBy) {
+          case 'title':
+            const titleComparison = (a.title || '').localeCompare(b.title || '');
+            return titleComparison !== 0 ? titleComparison : 
+                   new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          case 'tone':
+            const toneComparison = (a.tone || '').localeCompare(b.tone || '');
+            return toneComparison !== 0 ? toneComparison : 
+                   new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          case 'date':
+          default:
+            const aDate = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const bDate = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return bDate - aDate;
+        }
+      });
+
+      data = filtered;
+    }
+
+    return data;
+  }, [contentType, folders, notes, searchQuery, selectedTone, sortBy]);
+
+  // Smooth view mode transitions
+  const handleViewModeChange = useCallback(() => {
+    const newMode = viewMode === 'grid' ? 'list' : 'grid';
+    
+    // Animate transition
+    transitionProgress.value = withSpring(newMode === 'grid' ? 1 : 0, {
+      damping: 20,
+      stiffness: 300,
+    });
+    
+    setViewMode(newMode);
+    hapticService.light();
+  }, [viewMode, transitionProgress]);
+
+  // Enhanced refresh with visual feedback
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    refreshProgress.value = withTiming(1, { duration: 300 });
+    
+    if (contentType === 'folders') {
+      refreshFolders().finally(() => {
+        refreshProgress.value = withTiming(0, { duration: 300 });
+      });
+    } else {
+      loadNotesWithCache(true);
+    }
+    
+    hapticService.medium();
+  }, [contentType, refreshFolders, loadNotesWithCache, refreshProgress]);
+
+  // Folder navigation with breadcrumbs
   const handleFolderPress = useCallback(async (folder: Folder) => {
     hapticService.light();
     await navigateToFolder(folder.id);
-    setViewMode('notes');
-  }, [navigateToFolder]);
-
-  // Handle note selection
-  const handleNotePress = useCallback((note: Note) => {
-    hapticService.light();
-    navigation.navigate('Editor', { 
-      noteText: note.content,
-      tone: (note.tone as 'professional' | 'casual' | 'simplified') || 'professional',
-      noteId: note.id,
-      noteTitle: note.title,
+    setContentType('notes');
+    
+    // Animate content type change
+    transitionProgress.value = withSpring(0, {
+      damping: 15,
+      stiffness: 200,
     });
-  }, [navigation]);
+  }, [navigateToFolder, transitionProgress]);
 
-  // Handle back navigation
-  const handleBackPress = useCallback(() => {
-    if (viewMode === 'notes' && currentFolder) {
-      setCurrentFolder(null);
-      setViewMode('folders');
-    } else if (viewMode === 'search') {
-      setViewMode('folders');
+  const handleBackToFolders = useCallback(() => {
+    hapticService.light();
+    setCurrentFolder(null);
+    setContentType('folders');
+    
+    // Reset search when switching content types
+    setSearchQuery('');
+    setSelectedTone(null);
+  }, [setCurrentFolder]);
+
+  // Search functionality with animations
+  const toggleSearch = useCallback(() => {
+    const newShowSearch = !showSearchBar;
+    setShowSearchBar(newShowSearch);
+    
+    searchProgress.value = withSpring(newShowSearch ? 1 : 0, {
+      damping: 20,
+      stiffness: 300,
+    });
+    
+    if (!newShowSearch) {
       setSearchQuery('');
     }
-  }, [viewMode, currentFolder, setCurrentFolder]);
-
-  // Create new folder with improved error handling
-  const handleCreateFolder = useCallback(() => {
-    hapticService.light();
     
-    // Use a custom dialog since Alert.prompt may not work consistently
-    Alert.alert(
+    hapticService.light();
+  }, [showSearchBar, searchProgress]);
+
+  // Note actions
+  const handleNotePress = useCallback((note: Note) => {
+    hapticService.light();
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Editor', {
+        noteId: note.id,
+        noteText: note.content,
+        tone: note.tone,
+        originalText: note.originalText || ''
+      });
+    }
+  }, [navigation]);
+
+  const handleShowActions = useCallback((note: Note) => {
+    setSelectedNote(note);
+    setShowActionsModal(true);
+    hapticService.medium();
+  }, []);
+
+  const handleNoteDeleted = useCallback((noteId: string) => {
+    hapticService.light();
+    setNotes(prev => prev.filter(note => note.id !== noteId));
+    
+    // Clear cache for affected folders
+    setNotesCache({});
+    setLastRefresh({});
+    
+    setShowActionsModal(false);
+    setSelectedNote(null);
+  }, []);
+
+  const handleEditNote = useCallback((note: Note) => {
+    setShowActionsModal(false);
+    setSelectedNote(null);
+    handleNotePress(note);
+  }, [handleNotePress]);
+
+  // FAB actions
+  const handleScanNew = useCallback(() => {
+    hapticService.medium();
+    navigation.navigate('Scanner');
+  }, [navigation]);
+
+  const handleDocumentUpload = useCallback(() => {
+    hapticService.medium();
+    navigation.navigate('DocumentUploadScreen');
+  }, [navigation]);
+
+  const handleNewFolder = useCallback(() => {
+    hapticService.medium();
+    Alert.prompt(
       'Create New Folder',
-      'What would you like to name your folder?',
+      'Enter a name for your new folder:',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Create',
-          onPress: () => {
-            // Navigate to a simple text input screen or use a different approach
-            createFolderWithPrompt();
-          },
-        },
-      ]
-    );
-  }, []);
-
-  const createFolderWithPrompt = useCallback(async () => {
-    try {
-      // For now, let's create a simple folder with default name and allow editing later
-      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const defaultName = `New Folder ${timestamp}`;
-      
-      const randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
-      const success = await createFolder({
-        name: defaultName,
-        color: randomColor,
-        icon: 'folder',
-        description: 'Created from library'
-      });
-      
-      if (success) {
-        hapticService.success();
-        Alert.alert(
-          'Folder Created!', 
-          `"${defaultName}" has been created. You can rename it by tapping and holding on the folder.`,
-          [{ text: 'Got it!' }]
-        );
-      } else {
-        Alert.alert('Error', 'Failed to create folder. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error creating folder:', error);
-      Alert.alert('Error', 'Failed to create folder. Please check your connection and try again.');
-    }
-  }, [createFolder, availableColors]);
-
-  // Delete folder with confirmation
-  const handleDeleteFolder = useCallback((folder: Folder) => {
-    Alert.alert(
-      'Delete Folder',
-      `Are you sure you want to delete "${folder.name}"? ${folder.noteCount > 0 ? 'Notes will be moved to Inbox.' : ''}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const success = await deleteFolder(folder.id);
-            if (success) {
-              hapticService.success();
-            }
-          },
-        },
-      ]
-    );
-  }, [deleteFolder]);
-
-  // Handle edit folder
-  const handleEditFolder = useCallback((folder: Folder) => {
-    setEditingFolder(folder);
-    setFolderMenuVisible(prev => ({ ...prev, [folder.id]: false }));
-    // Navigate to folder edit screen or show edit modal
-    // For now, let's use a simple prompt approach
-    Alert.prompt(
-      'Edit Folder',
-      'Enter a new name for the folder:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save',
-          onPress: async (newName?: string) => {
-            if (newName && newName.trim()) {
-              // We'll need to implement updateFolder in FolderContext
-              // For now, just show a message
-              Alert.alert('Info', 'Folder editing feature will be implemented in the next update.');
+          onPress: async (folderName: string | undefined) => {
+            if (folderName && folderName.trim()) {
+              try {
+                await createFolder({ 
+                  name: folderName.trim(),
+                  description: '', 
+                  color: '#2196F3' 
+                });
+                hapticService.success();
+              } catch (error) {
+                Alert.alert('Error', 'Failed to create folder. Please try again.');
+              }
             }
           },
         },
       ],
-      'plain-text',
-      folder.name
+      'plain-text'
+    );
+  }, [createFolder]);
+
+  // Add missing folder actions handler
+  const handleShowFolderActions = useCallback((folder: Folder) => {
+    hapticService.medium();
+    Alert.alert(
+      folder.name,
+      'Folder actions',
+      [
+        { text: 'Rename', onPress: () => console.log('Rename folder:', folder.name) },
+        { text: 'Delete', style: 'destructive', onPress: () => console.log('Delete folder:', folder.name) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
     );
   }, []);
 
-  // Toggle folder menu visibility
-  const toggleFolderMenu = useCallback((folderId: string) => {
-    setFolderMenuVisible(prev => ({ ...prev, [folderId]: !prev[folderId] }));
-  }, []);
-
-  // Close all folder menus
-  const closeFolderMenus = useCallback(() => {
-    setFolderMenuVisible({});
-  }, []);
-
-  // Optimized sort functions for React Native performance
-  const sortedFolders = React.useMemo(() => {
-    return [...folders].sort((a, b) => {
-      switch (sortMode) {
-        case 'alphabetical':
-          return a.name.localeCompare(b.name);
-        case 'created':
-          return b.createdAt.getTime() - a.createdAt.getTime();
-        case 'size':
-          return b.noteCount - a.noteCount;
-        default: // updated
-          return b.updatedAt.getTime() - a.updatedAt.getTime();
-      }
-    });
-  }, [folders, sortMode]);
-
-  const sortedNotes = React.useMemo(() => {
-    return [...notes].sort((a, b) => {
-      switch (sortMode) {
-        case 'alphabetical':
-          return a.title.localeCompare(b.title);
-        case 'created':
-          return b.createdAt.getTime() - a.createdAt.getTime();
-        case 'size':
-          return (b.size || 0) - (a.size || 0);
-        default: // updated
-          return b.updatedAt.getTime() - a.updatedAt.getTime();
-      }
-    });
-  }, [notes, sortMode]);
-
-  // Render folder item with proper icon handling
-  const renderFolderItem = ({ item: folder }: { item: Folder }) => (
-    <TouchableOpacity onPress={() => handleFolderPress(folder)}>
-      <Card style={[styles.folderCard, { backgroundColor: theme.colors.surface }]}>
-        <Card.Content style={styles.folderContent}>
-          <View style={styles.folderHeader}>
-            <Avatar.Icon
-              size={48}
-              icon={folder.icon === 'folder' ? 'folder' : folder.icon || 'folder-outline'}
-              style={{ backgroundColor: folder.color || theme.colors.primaryContainer }}
-            />
-            <View style={styles.folderInfo}>
-              <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
-                {folder.name}
-              </Text>
-              {folder.description && (
-                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                  {folder.description}
-                </Text>
-              )}
-              <View style={styles.folderMeta}>
-                <Chip mode="outlined" compact>
-                  {folder.noteCount} note{folder.noteCount !== 1 ? 's' : ''}
-                </Chip>
-                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                  {formatDistanceToNow(folder.updatedAt)} ago
-                </Text>
-              </View>
-            </View>
-            <Menu
-              visible={folderMenuVisible[folder.id] || false}
-              anchor={
-                <IconButton
-                  icon="dots-vertical"
-                  onPress={() => toggleFolderMenu(folder.id)}
-                />
-              }
-              onDismiss={() => setFolderMenuVisible(prev => ({ ...prev, [folder.id]: false }))}
-            >
-              <Menu.Item
-                onPress={() => handleEditFolder(folder)}
-                title="Edit"
-                leadingIcon="pencil"
-              />
-              <Menu.Item
-                onPress={() => {
-                  setFolderMenuVisible(prev => ({ ...prev, [folder.id]: false }));
-                  handleDeleteFolder(folder);
-                }}
-                title="Delete"
-                leadingIcon="delete"
-              />
-            </Menu>
-          </View>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
-  );
-
-  // Render note item
-  const renderNoteItem = ({ item: note }: { item: Note }) => (
-    <TouchableOpacity onPress={() => handleNotePress(note)}>
-      <Card style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}>
-        <Card.Content>
-          <Text variant="titleMedium" numberOfLines={2} style={{ color: theme.colors.onSurface }}>
-            {note.title}
-          </Text>
-          <Text
-            variant="bodySmall"
-            numberOfLines={3}
-            style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}
-          >
-            {note.content.replace(/<[^>]*>/g, '').substring(0, 150)}...
-          </Text>
-          <View style={styles.noteMeta}>
-            {note.tone && (
-              <Chip mode="outlined" compact>
-                {note.tone}
-              </Chip>
-            )}
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-              {formatDistanceToNow(note.updatedAt)} ago
-            </Text>
-          </View>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
-  );
-
-  // Render header
-  const renderHeader = () => {
-    const showBackButton = viewMode !== 'folders';
-    const title = viewMode === 'search' ? 'Search Results' : 
-                  viewMode === 'notes' ? (currentFolder?.name || 'Inbox') : 'Library';
+  // Animated styles for smooth transitions
+  const animatedContainerStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      transitionProgress.value,
+      [0, 0.5, 1],
+      [1, 0.95, 1]
+    );
     
-    return (
-      <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
-        {showBackButton && (
-          <Appbar.BackAction onPress={handleBackPress} />
-        )}
-        <Appbar.Content title={title} titleStyle={{ fontWeight: 'bold' }} />
-        
-        {viewMode !== 'search' && (
-          <>
-            <Menu
-              visible={showSortMenu}
-              onDismiss={() => setShowSortMenu(false)}
-              anchor={
-                <Appbar.Action 
-                  icon="sort" 
-                  onPress={() => setShowSortMenu(true)}
-                />
-              }
-            >
-              <Menu.Item
-                onPress={() => { setSortMode('updated'); setShowSortMenu(false); }}
-                title="Last Updated"
-                leadingIcon={sortMode === 'updated' ? 'check' : undefined}
-              />
-              <Menu.Item
-                onPress={() => { setSortMode('created'); setShowSortMenu(false); }}
-                title="Date Created"
-                leadingIcon={sortMode === 'created' ? 'check' : undefined}
-              />
-              <Menu.Item
-                onPress={() => { setSortMode('alphabetical'); setShowSortMenu(false); }}
-                title="Alphabetical"
-                leadingIcon={sortMode === 'alphabetical' ? 'check' : undefined}
-              />
-              <Menu.Item
-                onPress={() => { setSortMode('size'); setShowSortMenu(false); }}
-                title="Size"
-                leadingIcon={sortMode === 'size' ? 'check' : undefined}
-              />
-            </Menu>
-            
-            <Appbar.Action 
-              icon={isGridView ? 'view-list' : 'view-grid'} 
-              onPress={() => setIsGridView(!isGridView)}
-            />
-          </>
-        )}
-        
-        <Appbar.Action 
-          icon="magnify" 
-          onPress={() => setViewMode('search')}
-        />
-      </Appbar.Header>
+    const scale = interpolate(
+      transitionProgress.value,
+      [0, 0.5, 1],
+      [1, 0.98, 1]
     );
+    
+    return {
+      opacity,
+      transform: [{ scale }],
+    };
+  });
+
+  // Header animated style
+  const headerAnimatedStyle = useAnimatedStyle(() => {
+    const translateY = interpolate(
+      scrollY.value,
+      [0, SCROLL_THRESHOLD],
+      [0, -SCROLL_THRESHOLD / 2]
+    );
+    
+    const opacity = interpolate(
+      scrollY.value,
+      [0, SCROLL_THRESHOLD],
+      [1, 0.8]
+    );
+    
+    return {
+      transform: [{ translateY }],
+      opacity,
+    };
+  });
+
+  // FAB animated style
+  const fabAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          translateY: withSpring(fabVisible ? 0 : 100, {
+            damping: 20,
+            stiffness: 300,
+          }),
+        },
+      ],
+    };
+  });
+
+  // Render functions
+  const renderNoteCard = useCallback(({ item }: { item: Note }) => (
+    <NoteCard 
+      note={item} 
+      onPress={() => handleNotePress(item)} 
+      onShowActions={() => handleShowActions(item)}
+      viewMode={viewMode}
+    />
+  ), [viewMode, handleNotePress, handleShowActions]);
+
+  const renderFolderCard = useCallback(({ item }: { item: Folder }) => (
+    <FolderCard 
+      folder={item} 
+      onPress={() => handleFolderPress(item)} 
+      onShowActions={() => handleShowFolderActions(item)}
+      viewMode={viewMode}
+    />
+  ), [viewMode, handleFolderPress, handleShowFolderActions]);
+
+  // Get current data based on content type
+  const getCurrentData = () => {
+    return processedData;
   };
 
-  // Render content based on view mode
+  const currentData = getCurrentData();
+
   const renderContent = () => {
-    if (viewMode === 'search') {
+    if (isLoading || foldersLoading) {
       return (
-        <View style={styles.searchContainer}>
-          <Searchbar
-            placeholder="Search folders and notes..."
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            onSubmitEditing={() => handleSearch(searchQuery)}
-            style={styles.searchBar}
-          />
-          
-          {searchQuery && (
-            <View style={styles.searchResults}>
-              {searchResults.folders.length > 0 && (
-                <>
-                  <Text variant="titleMedium" style={styles.searchSectionTitle}>
-                    Folders ({searchResults.folders.length})
-                  </Text>
-                  <FlatList
-                    data={searchResults.folders}
-                    renderItem={renderFolderItem}
-                    keyExtractor={(item) => item.id}
-                    scrollEnabled={false}
-                  />
-                </>
-              )}
-              
-              {searchResults.notes.length > 0 && (
-                <>
-                  <Text variant="titleMedium" style={styles.searchSectionTitle}>
-                    Notes ({searchResults.notes.length})
-                  </Text>
-                  <FlatList
-                    data={searchResults.notes}
-                    renderItem={renderNoteItem}
-                    keyExtractor={(item) => item.id}
-                    scrollEnabled={false}
-                  />
-                </>
-              )}
-              
-              {searchResults.folders.length === 0 && searchResults.notes.length === 0 && (
-                <View style={styles.emptyState}>
-                  <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant }}>
-                    No results found for "{searchQuery}"
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      );
-    }
-
-    if (isLoading && (viewMode === 'folders' ? folders.length === 0 : notes.length === 0)) {
-      return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" />
-          <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant, marginTop: 16 }}>
-            Loading {viewMode}...
+        <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.loadingText, { color: theme.colors.onSurfaceVariant }]}>
+            Loading {contentType === 'folders' ? 'folders' : 'notes'}...
           </Text>
         </View>
       );
     }
 
-    const data = viewMode === 'folders' ? sortedFolders : sortedNotes;
-
-    if (data.length === 0) {
+    if (currentData.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <AppIcon 
-            name={viewMode === 'folders' ? 'folder-outline' : 'note-outline'} 
-            size={64} 
-            color={theme.colors.onSurfaceVariant} 
-          />
-          <Text variant="headlineSmall" style={{ color: theme.colors.onSurface, marginTop: 16 }}>
-            No {viewMode} yet
-          </Text>
-          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', marginTop: 8 }}>
-            {viewMode === 'folders' 
-              ? 'Create your first folder to organize your notes'
-              : currentFolder
-                ? `No notes in "${currentFolder.name}" yet`
-                : 'No notes in your inbox yet'
+        <LibraryEmptyState
+          isSearching={searchQuery.trim().length > 0 || selectedTone !== null}
+          onClearFilters={() => {
+            setSearchQuery('');
+            setSelectedTone(null);
+          }}
+          onScanNew={handleScanNew}
+          onNewNote={() => {
+            const parentNavigation = navigation.getParent();
+            if (parentNavigation) {
+              parentNavigation.navigate('Editor', { noteText: '', tone: 'professional' });
             }
-          </Text>
-          {viewMode === 'folders' && (
-            <Button
-              mode="contained"
-              onPress={handleCreateFolder}
-              style={styles.createButton}
-            >
-              Create Folder
-            </Button>
-          )}
-        </View>
+          }}
+        />
       );
     }
 
-    if (viewMode === 'folders') {
-      return (
-        <FlatList
-          data={sortedFolders}
-          renderItem={renderFolderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
+    return (
+      <Animated.View style={[{ flex: 1 }, animatedContainerStyle]}>
+        <Animated.ScrollView
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl 
+              refreshing={isRefreshing} 
+              onRefresh={handleRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
           }
-          numColumns={isGridView ? 2 : 1}
-          key={isGridView ? 'grid' : 'list'}
-        />
-      );
-    } else {
-      return (
-        <FlatList
-          data={sortedNotes}
-          renderItem={renderNoteItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          numColumns={isGridView ? 2 : 1}
-          key={isGridView ? 'grid' : 'list'}
-        />
-      );
-    }
+        >
+          <FlashList
+            data={currentData as any[]}
+            renderItem={contentType === 'folders' ? renderFolderCard as any : renderNoteCard as any}
+            keyExtractor={(item: any) => item.id}
+            contentContainerStyle={{
+              ...styles.notesList,
+              ...(viewMode === 'grid' && { paddingHorizontal: 8 })
+            }}
+            estimatedItemSize={viewMode === 'grid' ? 160 : 140}
+            numColumns={viewMode === 'grid' ? 2 : 1}
+            key={`${viewMode}-${contentType}`}
+            ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 12 : 8 }} />}
+            scrollEnabled={false} // Disable inner scroll since we have outer scroll
+          />
+        </Animated.ScrollView>
+      </Animated.View>
+    );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <TouchableOpacity 
-        style={{ flex: 1 }} 
-        activeOpacity={1} 
-        onPress={closeFolderMenus}
-      >
-        {renderHeader()}
-        
-        {error && (
-          <Surface style={[styles.errorBanner, { backgroundColor: theme.colors.errorContainer }]}>
-            <Text style={{ color: theme.colors.onErrorContainer }}>{error}</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.surface }]} edges={['top']}>
+      <StatusBar 
+        barStyle={theme.dark ? 'light-content' : 'dark-content'} 
+        backgroundColor={theme.colors.surface} 
+      />
+      
+      <View style={[styles.content, { backgroundColor: theme.colors.background }]}>
+        {/* Enhanced Header */}
+        <Animated.View style={[styles.header, headerAnimatedStyle]}>
+          <LibraryHeader
+            searchQuery={searchQuery}
+            onSearch={setSearchQuery}
+            selectedTone={selectedTone}
+            onToneFilter={setSelectedTone}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            onRefresh={handleRefresh}
+          />
+          
+          {/* Content Type Selector with enhanced styling */}
+          <Surface style={[styles.contentTypeSelector, { backgroundColor: theme.colors.surface }]} elevation={2}>
+            <SegmentedButtons
+              value={contentType}
+              onValueChange={(value) => setContentType(value as 'notes' | 'folders')}
+              buttons={[
+                {
+                  value: 'folders',
+                  label: 'Folders',
+                  icon: 'folder',
+                  showSelectedCheck: true,
+                },
+                {
+                  value: 'notes',
+                  label: currentFolder ? currentFolder.name : 'All Notes',
+                  icon: 'note-text',
+                  showSelectedCheck: true,
+                },
+              ]}
+              style={styles.segmentedButtons}
+              density="small"
+            />
+            
+            {/* Enhanced breadcrumb navigation */}
+            {currentFolder && contentType === 'notes' && (
+              <View style={styles.breadcrumb}>
+                <Surface style={[styles.breadcrumbChip, { backgroundColor: theme.colors.primaryContainer }]} elevation={1}>
+                  <Text 
+                    variant="bodySmall" 
+                    style={[styles.breadcrumbText, { color: theme.colors.onPrimaryContainer }]}
+                    onPress={handleBackToFolders}
+                  >
+                    ← Back to Folders
+                  </Text>
+                </Surface>
+              </View>
+            )}
+            
+            {/* Stats display */}
+            <View style={styles.statsContainer}>
+              <Chip 
+                icon="folder" 
+                mode="outlined" 
+                compact
+                style={styles.statChip}
+              >
+                {folders.length} folders
+              </Chip>
+              <Chip 
+                icon="note-text" 
+                mode="outlined" 
+                compact
+                style={styles.statChip}
+              >
+                {notes.length} notes
+              </Chip>
+              {cacheStats.hits > 0 && (
+                <Chip 
+                  icon="flash" 
+                  mode="outlined" 
+                  compact
+                  style={styles.statChip}
+                >
+                  {Math.round((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100)}% cached
+                </Chip>
+              )}
+            </View>
           </Surface>
-        )}
+        </Animated.View>
         
         {renderContent()}
-      </TouchableOpacity>
-      
-      {viewMode === 'folders' && (
-        <FAB
-          icon="plus"
-          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-          onPress={handleCreateFolder}
+        
+        {/* Enhanced FAB with intelligent positioning */}
+        <Animated.View 
+          style={[
+            styles.fabContainer,
+            fabAnimatedStyle,
+          ]}
+        >
+          <FAB.Group
+            open={fabOpen}
+            visible={fabVisible}
+            icon={fabOpen ? 'close' : 'plus'}
+            actions={[
+              ...(contentType === 'folders' ? [{
+                icon: 'folder-plus',
+                label: 'New Folder',
+                onPress: handleNewFolder,
+                style: { backgroundColor: theme.colors.tertiary },
+              }] : []),
+              {
+                icon: 'camera-plus',
+                label: 'Scan Document',
+                onPress: handleScanNew,
+                style: { backgroundColor: theme.colors.primary },
+              },
+              {
+                icon: 'file-upload',
+                label: 'Upload Document',
+                onPress: handleDocumentUpload,
+                style: { backgroundColor: theme.colors.secondary },
+              },
+            ]}
+            onStateChange={({ open }) => setFabOpen(open)}
+            style={styles.fab}
+            fabStyle={{ 
+              backgroundColor: theme.colors.primary,
+              borderRadius: 16,
+            }}
+            color={theme.colors.onPrimary}
+          />
+        </Animated.View>
+
+        {/* Enhanced Note Actions Modal */}
+        <NoteActionsModal
+          visible={showActionsModal}
+          note={selectedNote}
+          onDismiss={() => setShowActionsModal(false)}
+          onEditNote={handleEditNote}
+          onNoteDeleted={handleNoteDeleted}
         />
-      )}
-      
-      {viewMode === 'notes' && (
-        <FAB
-          icon="plus"
-          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-          onPress={() => navigation.navigate('Editor', { 
-            noteText: '', 
-            tone: 'professional' 
-          })}
-        />
-      )}
+      </View>
     </SafeAreaView>
   );
-};
-
-const { width } = Dimensions.get('window');
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  errorBanner: {
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
-  },
-  listContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  folderCard: {
-    marginBottom: 12,
-    elevation: 2,
-  },
-  folderContent: {
-    paddingVertical: 16,
-  },
-  folderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  folderInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  folderMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 12,
-  },
-  noteCard: {
-    marginBottom: 12,
-    elevation: 1,
-  },
-  noteMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  searchContainer: {
+  content: {
     flex: 1,
   },
-  searchBar: {
-    margin: 16,
+  header: {
+    zIndex: 1000,
   },
-  searchResults: {
-    flex: 1,
+  contentTypeSelector: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 12,
     paddingHorizontal: 16,
+    borderRadius: 16,
   },
-  searchSectionTitle: {
+  segmentedButtons: {
     marginBottom: 12,
-    fontWeight: 'bold',
   },
-  createButton: {
-    marginTop: 16,
+  breadcrumb: {
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  breadcrumbChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  breadcrumbText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  statChip: {
+    height: 28,
+  },
+  notesList: {
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 120, // Extra space for FAB
+  },
+  fabContainer: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
   },
   fab: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
+    borderRadius: 16,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
 

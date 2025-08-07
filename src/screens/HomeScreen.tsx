@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Alert, ScrollView, TouchableOpacity, Dimensions, FlatList } from 'react-native';
 import { Surface, Button, Text, useTheme, Card, IconButton, ProgressBar } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -116,8 +116,8 @@ export default function HomeScreen() {
     };
   };
 
-  // Load user data
-  const loadUserData = async () => {
+  // Load user data - memoized to prevent infinite loops
+  const loadUserData = useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -142,13 +142,13 @@ export default function HomeScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []); // Empty deps - only recreate on mount
 
-  // Reload data when screen comes into focus
+  // Reload data when screen comes into focus (prevent infinite loops)
   useFocusEffect(
     React.useCallback(() => {
       loadUserData();
-    }, [])
+    }, [loadUserData]) // Include loadUserData in deps since it's memoized
   );
 
   const handleScanDocument = () => {
