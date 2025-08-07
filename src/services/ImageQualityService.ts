@@ -144,23 +144,28 @@ export class ImageQualityService {
     let lastError: Error;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let timeoutId: NodeJS.Timeout | undefined;
+      
       try {
         console.log(`ImageQualityService: ${operationName} attempt ${attempt}/${maxRetries}`);
         
         const timeoutPromise = new Promise<never>((_, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error('Quality analysis timeout')), timeoutMs);
-          (timeoutPromise as any).timeoutId = timeoutId;
+          timeoutId = setTimeout(() => reject(new Error('Quality analysis timeout')), timeoutMs);
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
         console.log(`ImageQualityService: ${operationName} succeeded on attempt ${attempt}`);
         
-        if ((timeoutPromise as any).timeoutId) {
-          clearTimeout((timeoutPromise as any).timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
         
         return result;
       } catch (error) {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
         lastError = error instanceof Error ? error : new Error(String(error));
         console.error(`ImageQualityService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
         

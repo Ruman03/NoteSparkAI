@@ -330,6 +330,27 @@ export default function ToneSelectionScreen() {
   const handleContinue = useCallback(async () => {
     if (!selectedTone) return;
 
+    // ENHANCED: Validate input data before processing
+    const hasDocumentText = isDocumentUpload && documentText && documentText.trim().length > 0;
+    const hasMultiPageImages = isMultiPage && imageUris && imageUris.length > 0;
+    const hasSinglePageImage = !isMultiPage && imageUris && imageUris.length > 0;
+    const hasExtractedText = extractedText && extractedText.trim().length > 0;
+    
+    if (!hasDocumentText && !hasMultiPageImages && !hasSinglePageImage && !hasExtractedText) {
+      console.warn('ToneSelectionScreen: No valid content to process');
+      hapticService.error();
+      
+      // Navigate to editor with placeholder text
+      navigation.navigate('Editor', {
+        noteText: 'Start writing your note here...',
+        tone: selectedTone === 'custom' ? 'professional' : selectedTone,
+        originalText: '',
+        folderId: selectedFolderId,
+        folderName: selectedFolderName,
+      });
+      return;
+    }
+
     hapticService.medium();
     setIsProcessing(true);
     setProcessingProgress(0);
@@ -348,14 +369,14 @@ export default function ToneSelectionScreen() {
       setProcessingStage('analyzing');
       setProcessingProgress(0.2);
       
-      if (isDocumentUpload && documentText) {
+      if (hasDocumentText) {
         // Document upload processing with enhanced metadata
         console.log(`Processing document with tone: ${selectedTone}`);
         setProcessingStage('transforming');
         setProcessingProgress(0.5);
         
         result = await aiService.processDocumentToNote(
-          documentText,
+          documentText!,
           documentMetadata?.mimeType || 'text/plain',
           finalTone,
           {
@@ -365,29 +386,38 @@ export default function ToneSelectionScreen() {
           }
         );
         noteText = result.transformedText;
-        originalText = documentText;
-      } else if (isMultiPage && imageUris && imageUris.length > 0) {
+        originalText = documentText!;
+      } else if (hasMultiPageImages) {
         // Multi-page processing with progress tracking
-        console.log(`Processing ${imageUris.length} pages with tone: ${selectedTone}`);
+        console.log(`Processing ${imageUris!.length} pages with tone: ${selectedTone}`);
         setProcessingStage('transforming');
         setProcessingProgress(0.6);
         
-        result = await aiService.transformImagesToNote(imageUris, finalTone);
+        result = await aiService.transformImagesToNote(imageUris!, finalTone);
         noteText = result.transformedText;
-        originalText = `Multi-page document (${imageUris.length} pages)`;
-      } else if (extractedText) {
+        originalText = `Multi-page document (${imageUris!.length} pages)`;
+      } else if (hasSinglePageImage) {
+        // Single-page image processing
+        console.log(`Processing single image with tone: ${selectedTone}`);
+        setProcessingStage('transforming');
+        setProcessingProgress(0.6);
+        
+        result = await aiService.transformImagesToNote(imageUris!, finalTone);
+        noteText = result.transformedText;
+        originalText = `Single-page document`;
+      } else if (hasExtractedText) {
         // Single page processing with tone customization
         setProcessingStage('optimizing');
         setProcessingProgress(0.7);
         
         result = await aiService.transformTextToNote({
-          text: extractedText,
+          text: extractedText!,
           tone: finalTone,
         });
         noteText = result.transformedText;
-        originalText = extractedText;
+        originalText = extractedText!;
       } else {
-        throw new Error('No text, images, or document provided for processing');
+        throw new Error('No valid content available for processing');
       }
       
       // Stage 4: Finalizing
@@ -419,7 +449,7 @@ export default function ToneSelectionScreen() {
       
       // Enhanced fallback handling
       const fallbackText = documentText || extractedText || 'Error processing document';
-      const fallbackTone: 'professional' | 'casual' | 'simplified' = selectedTone === 'custom' ? 'professional' : selectedTone;
+      const fallbackTone: 'professional' | 'casual' | 'simplified' = selectedTone === 'custom' ? 'professional' : (selectedTone || 'professional');
       
       navigation.navigate('Editor', {
         noteText: fallbackText,

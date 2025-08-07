@@ -79,22 +79,9 @@ import type {
   NativeStackScreenProps 
 } from '@react-navigation/native-stack';
 
-// Enable LayoutAnimation for Android (New Architecture compatible)
-// Skip in New Architecture to prevent console warnings
-try {
-  if (Platform.OS === 'android' && 
-      UIManager.setLayoutAnimationEnabledExperimental &&
-      typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
-    
-    // Check if we're in the old architecture before calling
-    const hasNewArchWarning = false; // Will be true if New Architecture is detected
-    
-    if (!hasNewArchWarning) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-  }
-} catch (error) {
-  // Silently ignore - this handles both New Architecture and any other issues
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 type DocumentPreviewScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -288,12 +275,8 @@ export default function DocumentPreviewScreen() {
       // Step 1: Enhanced text extraction
       updateProcessingStep('extract', 'active', 25);
       const extractedContent = await documentProcessor.processDocument(
-        {
-          uri: file.uri,
-          name: file.name,
-          type: file.type || 'application/octet-stream',
-          size: file.size,
-        }
+        file.uri,
+        file.type || 'application/octet-stream'
       );
 
       updateProcessingStep('extract', 'completed', 100);
@@ -306,7 +289,7 @@ export default function DocumentPreviewScreen() {
         progress: 25,
       }));
 
-      const analysis = await performContentAnalysis(extractedContent.extractedText || '');
+      const analysis = await performContentAnalysis(extractedContent.content || extractedContent.extractedText || '');
       updateProcessingStep('analyze', 'completed', 100);
       updateProcessingStep('insights', 'active', 0);
 
@@ -317,7 +300,7 @@ export default function DocumentPreviewScreen() {
         progress: 50,
       }));
 
-      const insights = await generateDocumentInsights(extractedContent.extractedText || '');
+      const insights = await generateDocumentInsights(extractedContent.content || extractedContent.extractedText || '');
       updateProcessingStep('insights', 'completed', 100);
       updateProcessingStep('optimize', 'active', 0);
 
@@ -328,7 +311,7 @@ export default function DocumentPreviewScreen() {
         progress: 75,
       }));
 
-      const optimizedContent = await optimizeContentForStudy(extractedContent.extractedText || '');
+      const optimizedContent = await optimizeContentForStudy(extractedContent.content || extractedContent.extractedText || '');
       updateProcessingStep('optimize', 'completed', 100);
       updateProcessingStep('finalize', 'active', 0);
 
@@ -342,11 +325,11 @@ export default function DocumentPreviewScreen() {
       const processingTime = Date.now() - startTime;
       const enhanced: EnhancedDocumentData = {
         extractedText: optimizedContent,
-        title: extractedContent.summary || (result?.extractedText ? generateFallbackTitle() : 'Document Preview'),
+        title: extractedContent.title || result.title || generateFallbackTitle(),
         metadata: {
           processingTime,
-          confidence: 0.95,
-          extractedPages: 1,
+          confidence: extractedContent.confidence || 0.95,
+          extractedPages: extractedContent.pageCount || 1,
           wordCount: countWords(optimizedContent),
           language: detectLanguage(optimizedContent),
           readingTime: calculateReadingTime(optimizedContent),
@@ -399,13 +382,13 @@ export default function DocumentPreviewScreen() {
       
       // Fallback to basic data
       setEnhancedData({
-        extractedText: result?.extractedText || 'Content could not be extracted.',
-        title: 'Document Preview',
+        extractedText: result.extractedText || 'Content could not be extracted.',
+        title: result.title || 'Document Preview',
         metadata: {
           processingTime: 0,
           confidence: 0.5,
           extractedPages: 1,
-          wordCount: countWords(result?.extractedText || ''),
+          wordCount: countWords(result.extractedText || ''),
           language: 'en',
           readingTime: 1,
           complexity: 'Medium',
@@ -545,15 +528,13 @@ export default function DocumentPreviewScreen() {
       });
 
       navigation.navigate('ToneSelection', {
-        extractedText: enhancedData.extractedText,
-        documentText: enhancedData.extractedText,
-        isDocumentUpload: true,
-        documentMetadata: {
-          title: enhancedData.title,
-          wordCount: enhancedData.metadata.wordCount,
-          pageCount: enhancedData.metadata.extractedPages,
-          fileSize: file.size,
-          mimeType: file.type || 'application/octet-stream',
+        uploadSession: {
+          ...uploadSession,
+          result: {
+            ...result,
+            extractedText: enhancedData.extractedText,
+            title: enhancedData.title,
+          },
         },
       });
     } catch (error) {

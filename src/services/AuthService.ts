@@ -43,25 +43,30 @@ export class AuthService {
     let lastError: Error;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let timeoutId: NodeJS.Timeout | undefined;
+      
       try {
         console.log(`AuthService: ${operationName} attempt ${attempt}/${maxRetries}`);
         
         const timeoutPromise = new Promise<never>((_, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error('Authentication timeout')), timeoutMs);
-          // Store timeout ID for potential cleanup
-          (timeoutPromise as any).timeoutId = timeoutId;
+          timeoutId = setTimeout(() => reject(new Error('Authentication timeout')), timeoutMs);
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
         console.log(`AuthService: ${operationName} succeeded on attempt ${attempt}`);
         
         // Clear timeout if operation completed successfully
-        if ((timeoutPromise as any).timeoutId) {
-          clearTimeout((timeoutPromise as any).timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
         
         return result;
       } catch (error) {
+        // Clear timeout in case of error
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
         lastError = error instanceof Error ? error : new Error(String(error));
         console.error(`AuthService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
         

@@ -120,23 +120,28 @@ class ImageCroppingService {
     let lastError: Error;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let timeoutId: NodeJS.Timeout | undefined;
+      
       try {
         console.log(`ImageCroppingService: ${operationName} attempt ${attempt}/${maxRetries}`);
         
         const timeoutPromise = new Promise<never>((_, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error('Cropping operation timeout')), timeoutMs);
-          (timeoutPromise as any).timeoutId = timeoutId;
+          timeoutId = setTimeout(() => reject(new Error('Cropping operation timeout')), timeoutMs);
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
         console.log(`ImageCroppingService: ${operationName} succeeded on attempt ${attempt}`);
         
-        if ((timeoutPromise as any).timeoutId) {
-          clearTimeout((timeoutPromise as any).timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
         
         return result;
       } catch (error) {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
         lastError = error instanceof Error ? error : new Error(String(error));
         console.error(`ImageCroppingService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
         

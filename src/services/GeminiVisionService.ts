@@ -1,5 +1,5 @@
 import { GenerativeModel, Part } from '@google/generative-ai';
-import RNFS from 'react-native-fs';
+import * as RNFS from 'react-native-fs';
 
 // Enhanced interfaces
 interface RetryOptions {
@@ -30,6 +30,7 @@ export interface GeminiVisionResult {
     pageCount: number;
     processingTime: number;
     imageSize?: number;
+    processingMethod?: string;
   };
   structure?: {
     sections: DocumentSection[];
@@ -82,7 +83,7 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
   backoffFactor: 2
 };
 
-const VISION_TIMEOUT = 45000; // 45 seconds for vision processing
+const VISION_TIMEOUT = 30000; // 30 seconds for vision processing
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB max file size
 const SUPPORTED_FORMATS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
 
@@ -343,12 +344,51 @@ export class GeminiVisionService {
         const prompt = this.buildExtractionPrompt(options);
 
         console.log('GeminiVisionService: Sending request to Gemini...');
-        const result = await this.geminiModel!.generateContent([prompt, imagePart]);
+        
+        // Optimized generation config for single image OCR
+        const generationConfig = {
+          temperature: 0.1,
+          topK: 1,
+          topP: 0.8,
+          maxOutputTokens: 4096,
+        };
+        
+        const result = await this.geminiModel!.generateContent({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: prompt },
+              imagePart
+            ]
+          }],
+          generationConfig
+        });
         const response = await result.response;
+        
+        // Enhanced response validation for single image
+        const candidates = response.candidates || [];
+        const finishReason = candidates.length > 0 ? candidates[0].finishReason : 'UNKNOWN';
+        console.log(`GeminiVisionService: Single image - Candidates: ${candidates.length}, Finish reason: ${finishReason}`);
+        
         const responseText = response.text();
+        console.log(`GeminiVisionService: Single image response length: ${responseText?.length || 0}`);
 
+        // Handle different response scenarios
         if (!responseText || responseText.trim().length === 0) {
-          throw new Error('GeminiVisionService: No text content extracted from image');
+          console.error('GeminiVisionService: Single image processing details:', {
+            hasResponse: !!response,
+            candidatesCount: candidates.length,
+            finishReason,
+            promptLength: prompt.length,
+            imageSize: size,
+            responseObject: response ? JSON.stringify(response, null, 2).substring(0, 300) : 'null'
+          });
+          throw new Error(`GeminiVisionService: No text content extracted from image (reason: ${finishReason})`);
+        }
+
+        // Handle MAX_TOKENS for single image
+        if (finishReason === 'MAX_TOKENS') {
+          console.warn('GeminiVisionService: Single image response truncated due to MAX_TOKENS');
         }
 
         // Parse Gemini's response
@@ -418,18 +458,82 @@ export class GeminiVisionService {
         const content = [prompt, ...imageParts];
         
         console.log('GeminiVisionService: Sending multi-page request to Gemini...');
-        const result = await this.geminiModel!.generateContent(content);
+        console.log(`GeminiVisionService: Prompt length: ${prompt.length}, Image parts: ${imageParts.length}`);
+        
+        // Optimized generation config for OCR tasks based on Gemini best practices
+        const generationConfig = {
+          temperature: 0.1,  // Low temperature for deterministic OCR output
+          topK: 1,          // Use only the most likely token for accuracy
+          topP: 0.8,        // Conservative nucleus sampling
+          maxOutputTokens: 4096, // Reduced to prevent MAX_TOKENS errors
+        };
+        
+        // Structure the request properly with the optimized config
+        const result = await this.geminiModel!.generateContent({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: prompt },
+              ...imageParts
+            ]
+          }],
+          generationConfig
+        });
         const response = await result.response;
+        
+        // Enhanced response debugging
+        console.log('GeminiVisionService: Raw response received, extracting text...');
+        console.log('GeminiVisionService: Response object type:', typeof response);
+        console.log('GeminiVisionService: Response keys:', response ? Object.keys(response) : 'null response');
+        
+        // Check for candidates and finish reason
+        const candidates = response.candidates || [];
+        const finishReason = candidates.length > 0 ? candidates[0].finishReason : 'UNKNOWN';
+        console.log(`GeminiVisionService: Candidates count: ${candidates.length}, Finish reason: ${finishReason}`);
+        
         const responseText = response.text();
-
+        console.log(`GeminiVisionService: Response text length: ${responseText?.length || 0}`);
+        console.log(`GeminiVisionService: Response text preview: "${responseText?.substring(0, 100) || 'EMPTY'}"`);
+        
+        // Handle MAX_TOKENS case specifically
+        if (finishReason === 'MAX_TOKENS') {
+          console.warn('GeminiVisionService: Response truncated due to MAX_TOKENS, using partial content');
+          if (responseText && responseText.trim().length > 0) {
+            // Use the partial response if it contains content
+            const processingTime = Date.now() - startTime;
+            const parsedResult = this.parseGeminiResponse(responseText, options, processingTime, totalSize);
+            parsedResult.metadata.pageCount = imageUris.length;
+            parsedResult.metadata.processingMethod = 'multi_page_batch_truncated';
+            console.log(`GeminiVisionService: Successfully processed ${imageUris.length} page document (truncated) in ${processingTime}ms`);
+            return parsedResult;
+          } else {
+            console.warn('GeminiVisionService: MAX_TOKENS but no usable content, falling back to individual processing');
+          }
+        }
+        
         if (!responseText || responseText.trim().length === 0) {
-          throw new Error('GeminiVisionService: No content extracted from multi-page document');
+          // Try to get more details about the response
+          console.error('GeminiVisionService: Empty response details:', {
+            hasResponse: !!response,
+            responseType: typeof response,
+            promptLength: prompt.length,
+            imageCount: imageParts.length,
+            totalContentLength: content.length,
+            finishReason,
+            candidatesCount: candidates.length,
+            responseObject: response ? JSON.stringify(response, null, 2).substring(0, 500) : 'null'
+          });
+          
+          // Fallback: try processing images individually if multi-page fails
+          console.log('GeminiVisionService: Attempting fallback to individual image processing...');
+          return await this.processImagesIndividually(imageUris, options, startTime, totalSize);
         }
 
         // Parse multi-page response
         const processingTime = Date.now() - startTime;
         const parsedResult = this.parseGeminiResponse(responseText, options, processingTime, totalSize);
         parsedResult.metadata.pageCount = imageUris.length;
+        parsedResult.metadata.processingMethod = 'multi_page_batch';
         
         console.log(`GeminiVisionService: Successfully processed ${imageUris.length} page document in ${processingTime}ms`);
         return parsedResult;
@@ -536,33 +640,32 @@ Format your response as JSON:
    * Build prompt for text extraction based on options
    */
   private buildExtractionPrompt(options: GeminiVisionOptions): string {
-    let prompt = `Extract all text from this image with high accuracy. `;
+    // Concise prompt to reduce token usage
+    let prompt = `Extract ALL text from this image. Return only the text content, no explanations.
+
+Requirements:
+- Include all visible text (headers, body, footers, numbers, dates)
+- Maintain original formatting and structure`;
 
     if (options.preserveLayout) {
-      prompt += `Preserve the original layout, spacing, and structure of the text. `;
+      prompt += `\n- Preserve spatial layout`;
     }
 
     if (options.extractTables) {
-      prompt += `If tables are present, format them clearly with proper rows and columns. `;
+      prompt += `\n- Keep table structure`;
     }
 
     if (options.enhanceHandwriting) {
-      prompt += `Pay special attention to handwritten text and ensure accurate recognition. `;
+      prompt += `\n- Enhanced handwriting recognition`;
     }
 
     if (options.detectLanguages) {
-      prompt += `Detect and preserve text in multiple languages. `;
+      prompt += `\n- Preserve multiple languages`;
     }
 
     if (options.analyzeStructure) {
-      prompt += `Identify document structure including headings, paragraphs, lists, and sections. `;
+      prompt += `\n- Maintain document hierarchy`;
     }
-
-    prompt += `
-
-Please provide the extracted text in a clean, readable format. If the image contains structured content like forms, tables, or formatted documents, preserve that structure in your response.
-
-For complex documents, organize the output logically and maintain the original hierarchy of information.`;
 
     return prompt;
   }
@@ -571,28 +674,88 @@ For complex documents, organize the output logically and maintain the original h
    * Build prompt for multi-page document processing
    */
   private buildMultiPagePrompt(pageCount: number, options: any): string {
-    let prompt = `I'm providing you with ${pageCount} images that represent pages of a single document. 
-Please extract all text from these images and combine them into a coherent document.
+    // Concise multi-page prompt to reduce token usage
+    let prompt = `Extract ALL text from these ${pageCount} images in order. Return only text content, no explanations.
 
-Instructions:
-- Process all ${pageCount} pages in sequence
-- Maintain the document flow and structure across pages
-- Preserve page breaks where appropriate
-- Combine related content intelligently
-- Ensure no text is lost or duplicated
-
-`;
+Requirements:
+- Process pages sequentially (Page 1, Page 2, etc.)
+- Include all visible text (headers, body, footers, page numbers)
+- Maintain document structure and formatting`;
 
     if (options.preservePageBreaks) {
-      prompt += `- Clearly mark page transitions with "--- Page X ---" markers\n`;
+      prompt += `\n- Insert "--- PAGE BREAK ---" between pages`;
     }
 
     if (options.extractTables) {
-      prompt += `- If tables span multiple pages, combine them properly\n`;
+      prompt += `\n- Preserve table structure`;
+    }
+
+    if (options.enhanceHandwriting) {
+      prompt += `\n- Enhanced handwriting recognition`;
+    }
+
+    return prompt;
+  }
+
+  /**
+   * Build comprehensive prompt for generating structured notes directly from images
+   */
+  private buildNoteGenerationPrompt(
+    pageCount: number, 
+    tone: 'professional' | 'casual' | 'simplified',
+    options: any
+  ): string {
+    const isMultiPage = pageCount > 1;
+    
+    let prompt = `Analyze ${isMultiPage ? `these ${pageCount} images` : 'this image'} and create a comprehensive, well-structured note. 
+
+IMPORTANT: Create a proper note, not just extracted text. Use HTML formatting for structure.
+
+TONE: ${tone.toUpperCase()}`;
+
+    if (tone === 'professional') {
+      prompt += `\n- Use formal language and clear structure\n- Include headings and bullet points\n- Professional formatting`;
+    } else if (tone === 'casual') {
+      prompt += `\n- Use friendly, conversational language\n- Keep it approachable and easy to read\n- Natural flow`;
+    } else if (tone === 'simplified') {
+      prompt += `\n- Use simple, clear language\n- Break down complex concepts\n- Easy to understand`;
     }
 
     prompt += `
-Please provide the complete extracted text as a single, well-organized document.`;
+
+FORMATTING REQUIREMENTS:
+- Use HTML tags: <h1>, <h2>, <h3> for headings
+- Use <p> for paragraphs  
+- Use <ul><li> or <ol><li> for lists
+- Use <strong> for emphasis
+- Use <br> for line breaks when needed
+- Use <blockquote> for important quotes or formulas
+- Use <table> for structured data if present
+
+CONTENT STRUCTURE:
+1. Start with a clear, descriptive title in <h1>
+2. Organize content with logical headings
+3. Break information into digestible sections
+4. Highlight key concepts and formulas
+5. Add context and explanations where helpful`;
+    
+    if (isMultiPage) {
+      prompt += `\n6. Maintain flow between pages`;
+    }
+
+    prompt += `
+
+SPECIAL HANDLING:
+- For math/equations: Format clearly in <blockquote> tags
+- For diagrams: Describe what they show
+- For tables: Convert to proper HTML tables
+- For handwritten notes: Clean up and organize`;
+
+    if (options.preservePageBreaks && isMultiPage) {
+      prompt += `\n- Mark page transitions clearly with headings`;
+    }
+
+    prompt += `\n\nCreate a comprehensive, well-organized note that someone could use for studying or reference.`;
 
     return prompt;
   }
@@ -629,6 +792,83 @@ Please provide the complete extracted text as a single, well-organized document.
         pageCount: 1,
         processingTime,
         imageSize
+      }
+    };
+  }
+
+  /**
+   * Parse structured note response with title extraction and enhanced formatting
+   */
+  private parseStructuredNoteResponse(
+    responseText: string,
+    tone: string,
+    processingTime: number,
+    imageSize: number
+  ): GeminiVisionResult & { formattedNote: string; noteTitle: string } {
+    // Extract title from the response (look for <h1> tag)
+    let noteTitle = 'Untitled Note';
+    const h1Match = responseText.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    if (h1Match) {
+      noteTitle = h1Match[1].trim();
+    } else {
+      // Fallback: use first line if no h1 found
+      const firstLine = responseText.split('\n')[0].trim();
+      if (firstLine.length > 0 && firstLine.length < 100) {
+        noteTitle = firstLine.replace(/<[^>]*>/g, '').trim();
+      }
+    }
+
+    // Clean and format the note content
+    let formattedNote = responseText.trim();
+    
+    // Ensure proper HTML structure if not present
+    if (!formattedNote.includes('<h1>') && !formattedNote.includes('<p>')) {
+      // Convert plain text to basic HTML
+      const lines = formattedNote.split('\n');
+      formattedNote = lines
+        .map((line, index) => {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) return '';
+          
+          // First non-empty line becomes title if no HTML structure
+          if (index === 0 && !formattedNote.includes('<h1>')) {
+            return `<h1>${trimmedLine}</h1>`;
+          }
+          
+          // Wrap other lines in paragraphs
+          return `<p>${trimmedLine}</p>`;
+        })
+        .filter(line => line.length > 0)
+        .join('\n');
+    }
+
+    // Enhanced metadata analysis for structured notes
+    const hasTablesDetected = formattedNote.includes('<table>') || formattedNote.includes('|');
+    const hasHandwritingDetected = /handwrit|cursive|script/i.test(formattedNote);
+    const hasFormattingDetected = /<(h[1-6]|p|ul|ol|li|strong|em|blockquote)>/i.test(formattedNote);
+    
+    // Detect document type based on content patterns
+    let documentType: GeminiVisionResult['metadata']['documentType'] = 'text';
+    if (/receipt|invoice|bill/i.test(formattedNote)) documentType = 'receipt';
+    else if (/form|application|field/i.test(formattedNote)) documentType = 'form';
+    else if (/slide|presentation|bullet/i.test(formattedNote)) documentType = 'presentation';
+    else if (hasHandwritingDetected) documentType = 'handwritten';
+    else if (hasTablesDetected) documentType = 'mixed';
+
+    return {
+      text: formattedNote,
+      formattedNote,
+      noteTitle,
+      confidence: 0.95,
+      metadata: {
+        hasTablesDetected,
+        hasHandwritingDetected,
+        documentType,
+        languagesDetected: ['en'],
+        pageCount: 1,
+        processingTime,
+        imageSize,
+        processingMethod: `structured_note_${tone}`
       }
     };
   }
@@ -762,6 +1002,246 @@ Please provide the complete extracted text as a single, well-organized document.
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
+
+  /**
+   * Extract text from image with reduced token limit for fallback
+   */
+  private async extractTextFromImageWithReducedTokens(
+    imageUri: string, 
+    options: GeminiVisionOptions = {}
+  ): Promise<GeminiVisionResult> {
+    if (!this.isConfigured()) {
+      throw new Error('GeminiVisionService: Service not initialized. Call setGeminiModel() first.');
+    }
+
+    const { size, format } = await this.validateImageInput(imageUri, 'extractTextFromImageWithReducedTokens');
+    const startTime = Date.now();
+
+    try {
+      console.log(`GeminiVisionService: Processing ${format.toUpperCase()} image with reduced tokens (${size} bytes)...`);
+
+      const imageBase64 = await this.convertImageToBase64(imageUri);
+      const imagePart: Part = {
+        inlineData: {
+          data: imageBase64,
+          mimeType: this.getMimeTypeFromUri(imageUri)
+        }
+      };
+
+      // Very simple prompt to minimize token usage
+      const prompt = `Extract all text from this image:`;
+
+      // Reduced generation config for fallback
+      const generationConfig = {
+        temperature: 0.1,
+        topK: 1,
+        topP: 0.8,
+        maxOutputTokens: 2048, // Reduced token limit
+      };
+      
+      const result = await this.geminiModel!.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: prompt },
+            imagePart
+          ]
+        }],
+        generationConfig
+      });
+      const response = await result.response;
+      
+      const candidates = response.candidates || [];
+      const finishReason = candidates.length > 0 ? candidates[0].finishReason : 'UNKNOWN';
+      const responseText = response.text();
+
+      if (!responseText || responseText.trim().length === 0) {
+        throw new Error(`No text extracted (reason: ${finishReason})`);
+      }
+
+      const processingTime = Date.now() - startTime;
+      const parsedResult = this.parseGeminiResponse(responseText, options, processingTime, size);
+      
+      console.log(`GeminiVisionService: Reduced token extraction completed in ${processingTime}ms`);
+      return parsedResult;
+
+    } catch (error) {
+      throw new Error(`Reduced token extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Generate structured notes directly from images with proper formatting and tone
+   * This bypasses basic OCR and creates properly formatted, organized notes in one step
+   */
+  public async generateStructuredNoteFromImages(
+    imageUris: string[],
+    tone: 'professional' | 'casual' | 'simplified' = 'professional',
+    options: GeminiVisionOptions & { combinePages?: boolean; preservePageBreaks?: boolean } = {}
+  ): Promise<GeminiVisionResult & { formattedNote: string; noteTitle: string }> {
+    return this.withRetry(async () => {
+      if (!this.isConfigured()) {
+        throw new Error('GeminiVisionService: Service not initialized. Call setGeminiModel() first.');
+      }
+
+      if (!imageUris || imageUris.length === 0) {
+        throw new Error('GeminiVisionService: No images provided for processing');
+      }
+
+      if (imageUris.length > 10) {
+        throw new Error('GeminiVisionService: Maximum 10 images allowed per request');
+      }
+
+      this.validateVisionOptions(options, 'generateStructuredNoteFromImages');
+
+      const startTime = Date.now();
+      let totalSize = 0;
+
+      try {
+        console.log(`GeminiVisionService: Generating structured ${tone} note from ${imageUris.length} image(s)...`);
+
+        // Validate all images first
+        for (const imageUri of imageUris) {
+          const { size } = await this.validateImageInput(imageUri, 'generateStructuredNoteFromImages');
+          totalSize += size;
+        }
+
+        // Convert all images to base64 and create parts
+        const imageParts: Part[] = [];
+        for (const imageUri of imageUris) {
+          const imageBase64 = await this.convertImageToBase64(imageUri);
+          imageParts.push({
+            inlineData: {
+              data: imageBase64,
+              mimeType: this.getMimeTypeFromUri(imageUri)
+            }
+          });
+        }
+
+        // Build comprehensive note generation prompt
+        const prompt = this.buildNoteGenerationPrompt(imageUris.length, tone, options);
+
+        console.log('GeminiVisionService: Sending note generation request to Gemini...');
+        console.log(`GeminiVisionService: Prompt length: ${prompt.length}, Image parts: ${imageParts.length}, Tone: ${tone}`);
+        
+        // Optimized generation config for structured note creation
+        const generationConfig = {
+          temperature: 0.3,  // Slightly higher for creative formatting
+          topK: 10,         // More options for better formatting choices
+          topP: 0.9,        // Higher nucleus sampling for varied expression
+          maxOutputTokens: 6144, // Sufficient for well-formatted notes
+        };
+        
+        const result = await this.geminiModel!.generateContent({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: prompt },
+              ...imageParts
+            ]
+          }],
+          generationConfig
+        });
+        const response = await result.response;
+        
+        // Enhanced response validation
+        const candidates = response.candidates || [];
+        const finishReason = candidates.length > 0 ? candidates[0].finishReason : 'UNKNOWN';
+        console.log(`GeminiVisionService: Note generation - Candidates: ${candidates.length}, Finish reason: ${finishReason}`);
+        
+        const responseText = response.text();
+        console.log(`GeminiVisionService: Generated note length: ${responseText?.length || 0}`);
+        
+        if (!responseText || responseText.trim().length === 0) {
+          console.error('GeminiVisionService: Empty note generation response:', {
+            hasResponse: !!response,
+            candidatesCount: candidates.length,
+            finishReason,
+            promptLength: prompt.length,
+            imageCount: imageParts.length
+          });
+          throw new Error(`Failed to generate structured note (reason: ${finishReason})`);
+        }
+
+        // Handle MAX_TOKENS for note generation
+        if (finishReason === 'MAX_TOKENS') {
+          console.warn('GeminiVisionService: Note generation response truncated due to MAX_TOKENS');
+        }
+
+        // Parse the structured response
+        const processingTime = Date.now() - startTime;
+        const parsedNote = this.parseStructuredNoteResponse(responseText, tone, processingTime, totalSize);
+        parsedNote.metadata.pageCount = imageUris.length;
+        parsedNote.metadata.processingMethod = `structured_note_${tone}`;
+        
+        console.log(`GeminiVisionService: Successfully generated structured ${tone} note in ${processingTime}ms`);
+        return parsedNote;
+
+      } catch (error) {
+        console.error('GeminiVisionService: Error generating structured note:', error);
+        throw new Error(`Structured note generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }, 'generateStructuredNoteFromImages');
+  }
+
+  /**
+   * Process images individually as fallback when multi-page processing fails
+   */
+  private async processImagesIndividually(
+    imageUris: string[], 
+    options: GeminiVisionOptions & { combinePages?: boolean; preservePageBreaks?: boolean },
+    startTime: number,
+    totalSize: number
+  ): Promise<GeminiVisionResult> {
+    console.log('GeminiVisionService: Processing images individually as fallback...');
+    
+    const individualResults: string[] = [];
+    for (let i = 0; i < imageUris.length; i++) {
+      try {
+        console.log(`GeminiVisionService: Processing individual image ${i + 1}/${imageUris.length}`);
+        const singleResult = await this.extractTextFromImage(imageUris[i], options);
+        
+        if (singleResult.text && singleResult.text.trim().length > 0) {
+          const pageHeader = options.preservePageBreaks ? `--- PAGE ${i + 1} ---\n` : '';
+          individualResults.push(`${pageHeader}${singleResult.text}`);
+          console.log(`GeminiVisionService: Successfully processed page ${i + 1}, text length: ${singleResult.text.length}`);
+        } else {
+          console.warn(`GeminiVisionService: No text extracted from page ${i + 1}, trying with reduced token limit...`);
+          // Try with smaller token limit for problematic images
+          try {
+            const fallbackOptions = { ...options };
+            const fallbackResult = await this.extractTextFromImageWithReducedTokens(imageUris[i], fallbackOptions);
+            if (fallbackResult.text && fallbackResult.text.trim().length > 0) {
+              const pageHeader = options.preservePageBreaks ? `--- PAGE ${i + 1} ---\n` : '';
+              individualResults.push(`${pageHeader}${fallbackResult.text}`);
+              console.log(`GeminiVisionService: Fallback extraction succeeded for page ${i + 1}, text length: ${fallbackResult.text.length}`);
+            } else {
+              individualResults.push(`--- PAGE ${i + 1} ---\n[No text detected]`);
+            }
+          } catch (fallbackError) {
+            console.warn(`GeminiVisionService: Fallback extraction also failed for page ${i + 1}:`, fallbackError);
+            individualResults.push(`--- PAGE ${i + 1} ---\n[No text detected]`);
+          }
+        }
+      } catch (singleError) {
+        console.error(`GeminiVisionService: Error processing individual image ${i + 1}:`, singleError);
+        individualResults.push(`--- PAGE ${i + 1} ---\n[Error processing page: ${singleError instanceof Error ? singleError.message : 'Unknown error'}]`);
+      }
+    }
+    
+    if (individualResults.length === 0) {
+      throw new Error('GeminiVisionService: All individual image processing attempts failed');
+    }
+    
+    const combinedText = individualResults.join('\n\n');
+    const processingTime = Date.now() - startTime;
+    const parsedResult = this.parseGeminiResponse(combinedText, options, processingTime, totalSize);
+    parsedResult.metadata.pageCount = imageUris.length;
+    parsedResult.metadata.processingMethod = 'individual_fallback';
+    
+    console.log(`GeminiVisionService: Fallback processing completed for ${individualResults.length} pages in ${processingTime}ms`);
+    return parsedResult;
   }
 }
 

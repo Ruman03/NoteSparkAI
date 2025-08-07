@@ -491,10 +491,10 @@ export default function DocumentUploadScreen() {
           />
         </View>
         
-        {session.error ? (
+        {(session as UploadSession).error ? (
           <View style={styles.errorContainer}>
             <Text variant="bodySmall" style={{ color: theme.colors.error }}>
-              {session.error}
+              {(session as UploadSession).error}
             </Text>
             <Button 
               mode="outlined" 

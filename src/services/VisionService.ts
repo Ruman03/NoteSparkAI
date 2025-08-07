@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import Config from 'react-native-config';
-import RNFS from 'react-native-fs';
+import * as RNFS from 'react-native-fs';
 
 // Enhanced interfaces for better type safety and functionality
 interface RetryOptions {
