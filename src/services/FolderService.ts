@@ -28,24 +28,134 @@ export class FolderService {
     return FolderService.instance;
   }
 
+  // OPTIMIZED: Enhanced retry mechanism with proper timeout handling for Firestore operations
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxRetries: number = 3,
+    timeoutMs: number = 12000 // Firestore operations need reasonable timeout
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`FolderService: ${operationName} attempt ${attempt}/${maxRetries}`);
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timeoutId = setTimeout(() => reject(new Error('Firestore operation timeout')), timeoutMs);
+          // Store timeout ID for potential cleanup
+          (timeoutPromise as any).timeoutId = timeoutId;
+        });
+        
+        const result = await Promise.race([operation(), timeoutPromise]);
+        console.log(`FolderService: ${operationName} succeeded on attempt ${attempt}`);
+        
+        // Clear timeout if operation completed successfully
+        if ((timeoutPromise as any).timeoutId) {
+          clearTimeout((timeoutPromise as any).timeoutId);
+        }
+        
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`FolderService: ${operationName} failed on attempt ${attempt}:`, lastError.message);
+        
+        // Don't retry for certain errors that won't change
+        if (this.isNonRetryableError(lastError)) {
+          console.log(`FolderService: Non-retryable error for ${operationName}, stopping retries`);
+          break;
+        }
+        
+        if (attempt === maxRetries) {
+          break;
+        }
+        
+        // Progressive backoff for Firestore operations
+        const delay = Math.min(1000 * attempt, 4000); // Max 4 seconds delay
+        console.log(`FolderService: Retrying ${operationName} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw new Error(`All ${maxRetries} attempts failed for ${operationName}: ${lastError!.message}`);
+  }
+
+  // OPTIMIZED: Check if error should not be retried
+  private isNonRetryableError(error: Error): boolean {
+    const nonRetryableCodes = [
+      'permission-denied',
+      'not-found',
+      'already-exists',
+      'invalid-argument',
+      'failed-precondition',
+      'out-of-range'
+    ];
+    
+    const errorMessage = error.message.toLowerCase();
+    return nonRetryableCodes.some(code => errorMessage.includes(code)) ||
+           errorMessage.includes('access denied') ||
+           errorMessage.includes('folder not found') ||
+           errorMessage.includes('duplicate') ||
+           errorMessage.includes('validation');
+  }
+
+  // OPTIMIZED: Enhanced input validation for folder operations
+  private validateFolderInput(name: string, description?: string): void {
+    if (!name || name.trim().length === 0) {
+      throw new Error('Folder name is required');
+    }
+    
+    if (name.trim().length > 100) {
+      throw new Error('Folder name must be 100 characters or less');
+    }
+    
+    if (description && description.length > 500) {
+      throw new Error('Folder description must be 500 characters or less');
+    }
+    
+    // Check for invalid characters
+    const invalidChars = /[<>:"/\\|?*]/;
+    if (invalidChars.test(name)) {
+      throw new Error('Folder name contains invalid characters');
+    }
+  }
+
   /**
-   * OPTIMIZED: Create a new folder with atomic validation and creation
+   * OPTIMIZED: Create folder with enhanced validation, retry logic, and atomic operations
    */
   async createFolder(
     request: CreateFolderRequest,
     userId: string
   ): Promise<Folder> {
     try {
-      // Validate folder name
-      if (!request.name.trim()) {
-        throw new Error('Folder name cannot be empty');
+      console.log('FolderService: Starting createFolder operation for user:', userId);
+      
+      // OPTIMIZED: Enhanced input validation
+      this.validateFolderInput(request.name, request.description);
+      
+      // OPTIMIZED: Validate userId
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+      
+      // OPTIMIZED: Validate parent folder if specified
+      if (request.parentId) {
+        const parentFolder = await this.withRetry(async () => {
+          return await this.getFolderById(request.parentId!, userId);
+        }, 'validateParentFolder');
+        
+        if (!parentFolder) {
+          throw new Error('Parent folder not found or access denied');
+        }
       }
 
       const folderRef = firestore().collection('folders').doc();
       const now = new Date();
       
-      // Get next order number
-      const nextOrder = await this.getNextFolderOrder(userId);
+      // Get next order number with retry
+      const nextOrder = await this.withRetry(async () => {
+        return await this.getNextFolderOrder(userId);
+      }, 'getNextFolderOrder');
 
       const folder: Folder = {
         id: folderRef.id,
@@ -67,52 +177,72 @@ export class FolderService {
         folder.parentId = request.parentId;
       }
 
-      // OPTIMIZED: Use atomic transaction to prevent race conditions
-      await firestore().runTransaction(async (transaction) => {
-        // Check for duplicate names within the transaction
-        const existingQuery = firestore()
-          .collection('folders')
-          .where('createdBy', '==', userId)
-          .where('name', '==', request.name.trim())
-          .where('isArchived', '==', false);
-        
-        // Execute query outside transaction first, then verify in transaction
-        const existingSnapshot = await existingQuery.get();
-        
-        if (!existingSnapshot.empty) {
-          throw new Error('A folder with this name already exists');
-        }
-        
-        // Create the folder atomically
-        transaction.set(folderRef, folder);
-      });
+      // OPTIMIZED: Use atomic transaction with retry logic
+      await this.withRetry(async () => {
+        return await firestore().runTransaction(async (transaction) => {
+          // Check for duplicate names within the transaction
+          const existingQuery = firestore()
+            .collection('folders')
+            .where('createdBy', '==', userId)
+            .where('name', '==', request.name.trim())
+            .where('isArchived', '==', false);
+          
+          const existingSnapshot = await existingQuery.get();
+          
+          if (!existingSnapshot.empty) {
+            throw new Error('A folder with this name already exists');
+          }
+          
+          // Create the folder atomically
+          transaction.set(folderRef, folder);
+        });
+      }, 'createFolderTransaction');
 
-      // Log analytics
-      await this.logFolderAnalytics(folder.id, 'created', userId);
+      console.log('FolderService: Folder created successfully:', folder.id);
+
+      // Log analytics with error handling
+      try {
+        await this.logFolderAnalytics(folder.id, 'created', userId);
+      } catch (analyticsError) {
+        console.warn('FolderService: Failed to log analytics:', analyticsError);
+        // Don't fail the operation if analytics fails
+      }
 
       return folder;
     } catch (error) {
-      console.error('Error creating folder:', error);
+      console.error('FolderService: Error creating folder:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to create folder');
     }
   }
 
   /**
-   * Get all folders for a user with optional filtering
+   * OPTIMIZED: Get user folders with enhanced filtering, retry logic, and performance optimization
    */
   async getUserFolders(
     userId: string, 
     filter?: FolderFilter
   ): Promise<Folder[]> {
     try {
+      console.log('FolderService: Starting getUserFolders operation for user:', userId);
+      
+      // OPTIMIZED: Input validation
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+      
       let query = firestore()
         .collection('folders')
         .where('createdBy', '==', userId)
         .where('isArchived', '==', false);
 
-      // Apply filters
+      // Apply filters with validation
       if (filter?.color) {
-        query = query.where('color', '==', filter.color);
+        const isValidColor = (FOLDER_COLORS as readonly string[]).includes(filter.color);
+        if (!isValidColor) {
+          console.warn('FolderService: Invalid color filter provided:', filter.color);
+        } else {
+          query = query.where('color', '==', filter.color);
+        }
       }
 
       if (filter?.hasNotes !== undefined) {
@@ -131,46 +261,77 @@ export class FolderService {
         query = query.where('createdAt', '<=', filter.createdBefore);
       }
 
-      // Apply sorting
+      // Apply sorting with validation
       const sortBy = filter?.sortBy || 'order';
       const sortOrder = filter?.sortOrder || 'asc';
-      query = query.orderBy(sortBy, sortOrder);
-
-      const snapshot = await query.get();
-      let folders = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-      })) as Folder[];
-
-      // Apply text search filter (client-side for flexibility)
-      if (filter?.searchQuery) {
-        const searchTerm = filter.searchQuery.toLowerCase();
-        folders = folders.filter(folder => 
-          folder.name.toLowerCase().includes(searchTerm) ||
-          folder.description?.toLowerCase().includes(searchTerm)
-        );
+      
+      if (['order', 'name', 'createdAt', 'updatedAt', 'noteCount'].includes(sortBy)) {
+        query = query.orderBy(sortBy, sortOrder);
+      } else {
+        console.warn('FolderService: Invalid sortBy field, using default order');
+        query = query.orderBy('order', 'asc');
       }
 
+      // OPTIMIZED: Execute query with retry logic
+      const snapshot = await this.withRetry(async () => {
+        return await query.get();
+      }, 'getUserFolders');
+      
+      let folders = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+        };
+      }) as Folder[];
+
+      // OPTIMIZED: Apply text search filter with better performance
+      if (filter?.searchQuery) {
+        const searchTerm = filter.searchQuery.toLowerCase().trim();
+        if (searchTerm.length > 0) {
+          folders = folders.filter(folder => {
+            const nameMatch = folder.name.toLowerCase().includes(searchTerm);
+            const descriptionMatch = folder.description?.toLowerCase().includes(searchTerm);
+            return nameMatch || descriptionMatch;
+          });
+        }
+      }
+
+      console.log(`FolderService: Retrieved ${folders.length} folders for user:`, userId);
       return folders;
     } catch (error) {
-      console.error('Error fetching user folders:', error);
+      console.error('FolderService: Error fetching user folders:', error);
       return [];
     }
   }
 
   /**
-   * Get folder by ID with full details
+   * OPTIMIZED: Get folder by ID with enhanced validation and retry logic
    */
   async getFolderById(folderId: string, userId: string): Promise<Folder | null> {
     try {
-      const doc = await firestore()
-        .collection('folders')
-        .doc(folderId)
-        .get();
+      console.log('FolderService: Starting getFolderById operation:', folderId);
+      
+      // OPTIMIZED: Input validation
+      if (!folderId || folderId.trim().length === 0) {
+        throw new Error('Folder ID is required');
+      }
+      
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+
+      const doc = await this.withRetry(async () => {
+        return await firestore()
+          .collection('folders')
+          .doc(folderId)
+          .get();
+      }, 'getFolderById');
 
       if (!doc.exists) {
+        console.log('FolderService: Folder not found:', folderId);
         return null;
       }
 
@@ -178,23 +339,27 @@ export class FolderService {
       
       // Verify ownership
       if (data.createdBy !== userId) {
+        console.warn('FolderService: Access denied for folder:', folderId, 'user:', userId);
         throw new Error('Access denied');
       }
 
-      return {
+      const folder = {
         ...data,
         id: doc.id,
         createdAt: data.createdAt.toDate(),
         updatedAt: data.updatedAt.toDate(),
       } as Folder;
+      
+      console.log('FolderService: Folder retrieved successfully:', folderId);
+      return folder;
     } catch (error) {
-      console.error('Error fetching folder by ID:', error);
+      console.error('FolderService: Error fetching folder by ID:', error);
       return null;
     }
   }
 
   /**
-   * Update folder properties
+   * OPTIMIZED: Update folder with enhanced validation, duplicate checking, and retry logic
    */
   async updateFolder(
     folderId: string,
@@ -202,20 +367,35 @@ export class FolderService {
     userId: string
   ): Promise<boolean> {
     try {
-      // Verify ownership first
-      const folder = await this.getFolderById(folderId, userId);
+      console.log('FolderService: Starting updateFolder operation:', folderId);
+      
+      // OPTIMIZED: Input validation
+      if (!folderId || folderId.trim().length === 0) {
+        throw new Error('Folder ID is required');
+      }
+      
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+
+      // Verify ownership first with retry
+      const folder = await this.withRetry(async () => {
+        return await this.getFolderById(folderId, userId);
+      }, 'verifyFolderOwnership');
+      
       if (!folder) {
         throw new Error('Folder not found or access denied');
       }
 
-      // Validate name if being updated
+      // OPTIMIZED: Validate name if being updated
       if (updates.name !== undefined) {
-        if (!updates.name.trim()) {
-          throw new Error('Folder name cannot be empty');
-        }
+        this.validateFolderInput(updates.name, updates.description);
 
-        // Check for duplicate names (excluding current folder)
-        const existingFolder = await this.getFolderByName(updates.name.trim(), userId);
+        // Check for duplicate names (excluding current folder) with retry
+        const existingFolder = await this.withRetry(async () => {
+          return await this.getFolderByName(updates.name!.trim(), userId);
+        }, 'checkDuplicateName');
+        
         if (existingFolder && existingFolder.id !== folderId) {
           throw new Error('A folder with this name already exists');
         }
@@ -230,96 +410,152 @@ export class FolderService {
       if (updateData.name) {
         updateData.name = updateData.name.trim();
       }
+      
+      // Trim description if provided
+      if (updateData.description) {
+        updateData.description = updateData.description.trim();
+      }
 
-      await firestore()
-        .collection('folders')
-        .doc(folderId)
-        .update(updateData);
+      // OPTIMIZED: Update with retry logic
+      await this.withRetry(async () => {
+        await firestore()
+          .collection('folders')
+          .doc(folderId)
+          .update(updateData);
+      }, 'updateFolder');
 
-      // Log analytics
-      await this.logFolderAnalytics(folderId, 'updated', userId);
+      console.log('FolderService: Folder updated successfully:', folderId);
+
+      // Log analytics with error handling
+      try {
+        await this.logFolderAnalytics(folderId, 'updated', userId);
+      } catch (analyticsError) {
+        console.warn('FolderService: Failed to log analytics:', analyticsError);
+        // Don't fail the operation if analytics fails
+      }
 
       return true;
     } catch (error) {
-      console.error('Error updating folder:', error);
+      console.error('FolderService: Error updating folder:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to update folder');
     }
   }
 
   /**
-   * Move notes to a folder with batch operations
+   * OPTIMIZED: Move notes to folder with enhanced validation, retry logic, and atomic operations
    */
   async moveNotesToFolder(
     request: MoveNotesRequest,
     userId: string
   ): Promise<boolean> {
     try {
-      if (request.noteIds.length === 0) {
+      console.log(`FolderService: Starting moveNotesToFolder operation for ${request.noteIds.length} notes`);
+      
+      // OPTIMIZED: Input validation
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+      
+      if (!request.noteIds || request.noteIds.length === 0) {
+        console.log('FolderService: No notes to move, returning success');
         return true;
       }
+      
+      if (request.noteIds.length > 100) {
+        throw new Error('Cannot move more than 100 notes at once');
+      }
 
-      const batch = firestore().batch();
-      const now = new Date();
-
-      // Verify folder ownership if moving to a folder
+      // Verify folder ownership if moving to a folder with retry
       if (request.targetFolderId) {
-        const targetFolder = await this.getFolderById(request.targetFolderId, userId);
+        const targetFolder = await this.withRetry(async () => {
+          return await this.getFolderById(request.targetFolderId!, userId);
+        }, 'verifyTargetFolder');
+        
         if (!targetFolder) {
           throw new Error('Target folder not found or access denied');
         }
       }
 
-      // Get current notes to determine source folders
+      // Get current notes to determine source folders with retry
       const sourcefolderCounts: Record<string, number> = {};
+      const validNoteIds: string[] = [];
       
       for (const noteId of request.noteIds) {
-        // Verify note ownership
-        const noteDoc = await firestore().collection('notes').doc(noteId).get();
-        if (!noteDoc.exists || noteDoc.data()?.createdBy !== userId) {
-          throw new Error(`Note ${noteId} not found or access denied`);
-        }
+        try {
+          const noteDoc = await this.withRetry(async () => {
+            return await firestore().collection('notes').doc(noteId).get();
+          }, `verifyNote_${noteId}`);
+          
+          if (!noteDoc.exists || noteDoc.data()?.createdBy !== userId) {
+            console.warn(`FolderService: Note ${noteId} not found or access denied, skipping`);
+            continue;
+          }
 
-        const currentFolderId = noteDoc.data()?.folderId;
-        if (currentFolderId) {
-          sourcefolderCounts[currentFolderId] = (sourcefolderCounts[currentFolderId] || 0) + 1;
+          const currentFolderId = noteDoc.data()?.folderId;
+          if (currentFolderId) {
+            sourcefolderCounts[currentFolderId] = (sourcefolderCounts[currentFolderId] || 0) + 1;
+          }
+          
+          validNoteIds.push(noteId);
+        } catch (noteError) {
+          console.warn(`FolderService: Error verifying note ${noteId}:`, noteError);
+          // Continue with other notes
         }
+      }
+      
+      if (validNoteIds.length === 0) {
+        throw new Error('No valid notes found to move');
+      }
+
+      // OPTIMIZED: Use batch operations with retry logic
+      await this.withRetry(async () => {
+        const batch = firestore().batch();
+        const now = new Date();
 
         // Update note's folder reference
-        const noteRef = firestore().collection('notes').doc(noteId);
-        batch.update(noteRef, {
-          folderId: request.targetFolderId,
-          updatedAt: now,
-        });
-      }
+        for (const noteId of validNoteIds) {
+          const noteRef = firestore().collection('notes').doc(noteId);
+          batch.update(noteRef, {
+            folderId: request.targetFolderId || null,
+            updatedAt: now,
+          });
+        }
 
-      // Update source folder note counts (decrease)
-      for (const [sourceFolderId, count] of Object.entries(sourcefolderCounts)) {
-        const sourceFolderRef = firestore().collection('folders').doc(sourceFolderId);
-        batch.update(sourceFolderRef, {
-          noteCount: firestore.FieldValue.increment(-count),
-          updatedAt: now,
-        });
-      }
+        // Update source folder note counts (decrease)
+        for (const [sourceFolderId, count] of Object.entries(sourcefolderCounts)) {
+          const sourceFolderRef = firestore().collection('folders').doc(sourceFolderId);
+          batch.update(sourceFolderRef, {
+            noteCount: firestore.FieldValue.increment(-count),
+            updatedAt: now,
+          });
+        }
 
-      // Update target folder note count (increase)
+        // Update target folder note count (increase)
+        if (request.targetFolderId) {
+          const targetFolderRef = firestore().collection('folders').doc(request.targetFolderId);
+          batch.update(targetFolderRef, {
+            noteCount: firestore.FieldValue.increment(validNoteIds.length),
+            updatedAt: now,
+          });
+        }
+
+        await batch.commit();
+      }, 'moveNotesToFolderBatch');
+
+      console.log(`FolderService: Successfully moved ${validNoteIds.length} notes to folder:`, request.targetFolderId);
+
+      // Log analytics with error handling
       if (request.targetFolderId) {
-        const targetFolderRef = firestore().collection('folders').doc(request.targetFolderId);
-        batch.update(targetFolderRef, {
-          noteCount: firestore.FieldValue.increment(request.noteIds.length),
-          updatedAt: now,
-        });
-      }
-
-      await batch.commit();
-
-      // Log analytics
-      if (request.targetFolderId) {
-        await this.logFolderAnalytics(request.targetFolderId, 'notes_added', userId);
+        try {
+          await this.logFolderAnalytics(request.targetFolderId, 'notes_added', userId);
+        } catch (analyticsError) {
+          console.warn('FolderService: Failed to log analytics:', analyticsError);
+        }
       }
 
       return true;
     } catch (error) {
-      console.error('Error moving notes to folder:', error);
+      console.error('FolderService: Error moving notes to folder:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to move notes');
     }
   }
@@ -484,7 +720,7 @@ export class FolderService {
   }
 
   /**
-   * Get notes in a specific folder with pagination
+   * OPTIMIZED: Enhanced get notes in folder with retry logic and better performance
    */
   async getNotesInFolder(
     folderId: string | null, // null for inbox
@@ -493,6 +729,17 @@ export class FolderService {
     lastNote?: Note
   ): Promise<Note[]> {
     try {
+      console.log('FolderService: Starting getNotesInFolder operation for folder:', folderId);
+      
+      // OPTIMIZED: Input validation
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+      
+      if (limit <= 0 || limit > 1000) {
+        throw new Error('Limit must be between 1 and 1000');
+      }
+
       let query = firestore()
         .collection('notes')
         .where('createdBy', '==', userId);
@@ -502,27 +749,40 @@ export class FolderService {
         // Inbox - notes without folder
         query = query.where('folderId', '==', null);
       } else {
+        // Verify folder exists and user has access
+        const folder = await this.withRetry(async () => {
+          return await this.getFolderById(folderId, userId);
+        }, 'verifyFolderAccess');
+        
+        if (!folder) {
+          throw new Error('Folder not found or access denied');
+        }
+        
         query = query.where('folderId', '==', folderId);
       }
 
-      // Get all matching notes and filter on client side to avoid complex index
-      const snapshot = await query.get();
+      // OPTIMIZED: Execute query with retry logic
+      const snapshot = await this.withRetry(async () => {
+        return await query.get();
+      }, 'getNotesInFolder');
 
       let notes = snapshot.docs
-        .map(doc => ({
-          ...doc.data(),
-          id: doc.id,
-          createdAt: doc.data().createdAt.toDate(),
-          updatedAt: doc.data().updatedAt.toDate(),
-        })) as Note[];
+        .map(doc => {
+          const data = doc.data();
+          return {
+            ...data,
+            id: doc.id,
+            createdAt: data.createdAt.toDate(),
+            updatedAt: data.updatedAt.toDate(),
+          };
+        }) as Note[];
 
-      // Filter archived notes on client side
-      notes = notes.filter((note: Note) => !note.isArchived);
+      // OPTIMIZED: Filter archived notes and sort efficiently
+      notes = notes
+        .filter((note: Note) => !note.isArchived)
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-      // Sort by updated date (newest first) on client side
-      notes.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-
-      // Apply pagination on client side
+      // OPTIMIZED: Apply pagination efficiently
       if (lastNote) {
         const lastNoteIndex = notes.findIndex(note => note.id === lastNote.id);
         if (lastNoteIndex >= 0) {
@@ -531,29 +791,152 @@ export class FolderService {
       }
 
       // Apply limit
-      return notes.slice(0, limit);
+      const result = notes.slice(0, limit);
+      
+      console.log(`FolderService: Retrieved ${result.length} notes from folder:`, folderId);
+      return result;
     } catch (error) {
-      console.error('Error fetching notes in folder:', error);
+      console.error('FolderService: Error fetching notes in folder:', error);
       return [];
     }
   }
 
-  /**
-   * Get folder statistics
-   */
+  // OPTIMIZED: Enhanced helper methods with retry logic and better validation
+
+  private async getFolderByName(name: string, userId: string): Promise<Folder | null> {
+    try {
+      // OPTIMIZED: Input validation
+      if (!name || name.trim().length === 0) {
+        return null;
+      }
+      
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+
+      const snapshot = await this.withRetry(async () => {
+        return await firestore()
+          .collection('folders')
+          .where('createdBy', '==', userId)
+          .where('name', '==', name.trim())
+          .where('isArchived', '==', false)
+          .limit(1)
+          .get();
+      }, 'getFolderByName');
+
+      if (snapshot.empty) {
+        return null;
+      }
+
+      const doc = snapshot.docs[0];
+      return {
+        ...doc.data(),
+        id: doc.id,
+        createdAt: doc.data().createdAt.toDate(),
+        updatedAt: doc.data().updatedAt.toDate(),
+      } as Folder;
+    } catch (error) {
+      console.error('FolderService: Error fetching folder by name:', error);
+      return null;
+    }
+  }
+
+  private async getNextFolderOrder(userId: string): Promise<number> {
+    try {
+      // OPTIMIZED: Input validation
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+
+      const snapshot = await this.withRetry(async () => {
+        return await firestore()
+          .collection('folders')
+          .where('createdBy', '==', userId)
+          .get();
+      }, 'getNextFolderOrder');
+
+      if (snapshot.empty) {
+        return 1;
+      }
+
+      // OPTIMIZED: Find the highest order efficiently
+      let highestOrder = 0;
+      snapshot.docs.forEach(doc => {
+        const order = doc.data().order || 0;
+        if (order > highestOrder) {
+          highestOrder = order;
+        }
+      });
+
+      return highestOrder + 1;
+    } catch (error) {
+      console.error('FolderService: Error getting next folder order:', error);
+      return Date.now(); // Fallback to timestamp
+    }
+  }
+
+  private async logFolderAnalytics(
+    folderId: string,
+    action: string,
+    userId: string
+  ): Promise<void> {
+    try {
+      // OPTIMIZED: Input validation
+      if (!folderId || !action || !userId) {
+        console.warn('FolderService: Invalid analytics parameters, skipping');
+        return;
+      }
+
+      // OPTIMIZED: Analytics logging with retry but don't fail operations
+      await this.withRetry(async () => {
+        await firestore().collection('analytics').add({
+          type: 'folder_action',
+          folderId,
+          action,
+          userId,
+          timestamp: new Date(),
+          platform: 'mobile',
+          version: '1.0.0', // Could be dynamic
+        });
+      }, 'logFolderAnalytics', 2, 5000); // Shorter timeout for analytics
+      
+      console.log(`FolderService: Analytics logged - ${action} for folder:`, folderId);
+    } catch (error) {
+      // Don't throw errors for analytics failures
+      console.warn('FolderService: Failed to log folder analytics:', error);
+    }
+  }
+
+  // OPTIMIZED: Get comprehensive folder statistics with retry logic
   async getFolderStats(folderId: string, userId: string): Promise<FolderStats | null> {
     try {
-      const folder = await this.getFolderById(folderId, userId);
+      console.log('FolderService: Starting getFolderStats operation:', folderId);
+      
+      // OPTIMIZED: Input validation
+      if (!folderId || folderId.trim().length === 0) {
+        throw new Error('Folder ID is required');
+      }
+      
+      if (!userId || userId.trim().length === 0) {
+        throw new Error('User ID is required');
+      }
+
+      const folder = await this.withRetry(async () => {
+        return await this.getFolderById(folderId, userId);
+      }, 'getFolderForStats');
+      
       if (!folder) {
         return null;
       }
 
-      const notesSnapshot = await firestore()
-        .collection('notes')
-        .where('folderId', '==', folderId)
-        .where('createdBy', '==', userId)
-        .where('isArchived', '==', false)
-        .get();
+      const notesSnapshot = await this.withRetry(async () => {
+        return await firestore()
+          .collection('notes')
+          .where('folderId', '==', folderId)
+          .where('createdBy', '==', userId)
+          .where('isArchived', '==', false)
+          .get();
+      }, 'getNotesForStats');
 
       const notes = notesSnapshot.docs.map(doc => doc.data());
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -567,9 +950,10 @@ export class FolderService {
           : folder.createdAt,
       };
 
+      console.log('FolderService: Folder stats calculated:', stats);
       return stats;
     } catch (error) {
-      console.error('Error fetching folder stats:', error);
+      console.error('FolderService: Error fetching folder stats:', error);
       return null;
     }
   }
@@ -706,84 +1090,6 @@ export class FolderService {
     } catch (error) {
       console.error('Error searching folders and notes:', error);
       return { folders: [], notes: [] };
-    }
-  }
-
-  // Private helper methods
-
-  private async getFolderByName(name: string, userId: string): Promise<Folder | null> {
-    try {
-      const snapshot = await firestore()
-        .collection('folders')
-        .where('createdBy', '==', userId)
-        .where('name', '==', name)
-        .where('isArchived', '==', false)
-        .limit(1)
-        .get();
-
-      if (snapshot.empty) {
-        return null;
-      }
-
-      const doc = snapshot.docs[0];
-      return {
-        ...doc.data(),
-        id: doc.id,
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-      } as Folder;
-    } catch (error) {
-      console.error('Error fetching folder by name:', error);
-      return null;
-    }
-  }
-
-  private async getNextFolderOrder(userId: string): Promise<number> {
-    try {
-      // Use a simpler query without compound index requirement
-      const snapshot = await firestore()
-        .collection('folders')
-        .where('createdBy', '==', userId)
-        .get();
-
-      if (snapshot.empty) {
-        return 1;
-      }
-
-      // Find the highest order on the client side to avoid index requirements
-      let highestOrder = 0;
-      snapshot.docs.forEach(doc => {
-        const order = doc.data().order || 0;
-        if (order > highestOrder) {
-          highestOrder = order;
-        }
-      });
-
-      return highestOrder + 1;
-    } catch (error) {
-      console.error('Error getting next folder order:', error);
-      return Date.now(); // Fallback to timestamp
-    }
-  }
-
-  private async logFolderAnalytics(
-    folderId: string,
-    action: string,
-    userId: string
-  ): Promise<void> {
-    try {
-      // Simple analytics logging - could be enhanced with dedicated analytics service
-      await firestore().collection('analytics').add({
-        type: 'folder_action',
-        folderId,
-        action,
-        userId,
-        timestamp: new Date(),
-        platform: 'mobile',
-      });
-    } catch (error) {
-      // Don't throw errors for analytics failures
-      console.warn('Failed to log folder analytics:', error);
     }
   }
 }
