@@ -1,7 +1,29 @@
 // Voice-to-Text Service - Production Ready with Mock Implementation
+// OPTIMIZED: Comprehensive error handling, retry logic, and performance monitoring
 // Real-time dictation service with Whisper API enhancement capability
 
 import { Platform } from 'react-native';
+
+// Enhanced interfaces for better type safety and functionality
+interface RetryOptions {
+  maxRetries: number;
+  baseDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+}
+
+interface VoiceServiceMetrics {
+  sessionsStarted: number;
+  sessionsCompleted: number;
+  sessionsFailed: number;
+  totalWordsTranscribed: number;
+  totalListeningTime: number;
+  averageConfidence: number;
+  enhancementsUsed: number;
+  errorCount: number;
+  lastSuccess?: Date;
+  lastError?: string;
+}
 
 export interface VoiceTranscriptionResult {
   text: string;
@@ -10,6 +32,7 @@ export interface VoiceTranscriptionResult {
   timestamp: number;
   language: string;
   source: 'native' | 'whisper';
+  processingTime?: number;
 }
 
 export interface VoiceSettings {
@@ -20,6 +43,8 @@ export interface VoiceSettings {
   maxDuration: number; // in seconds
   pauseThreshold: number; // silence duration to auto-stop
   enableWhisperEnhancement: boolean; // Pro feature flag
+  enableNoiseReduction: boolean;
+  enableAutoStop: boolean;
 }
 
 export interface VoiceSessionMetrics {
@@ -31,6 +56,7 @@ export interface VoiceSessionMetrics {
   pauseCount: number;
   errorCount: number;
   enhancementUsed: boolean;
+  sessionId: string;
 }
 
 export interface WhisperEnhancementRequest {
@@ -51,6 +77,29 @@ type VoiceErrorCallback = (error: string) => void;
 type VoiceCompleteCallback = (metrics: VoiceSessionMetrics) => void;
 type VoiceVolumeCallback = (volume: number) => void;
 
+// Enhanced constants
+const DEFAULT_RETRY_OPTIONS: RetryOptions = {
+  maxRetries: 3,
+  baseDelay: 500,
+  maxDelay: 5000,
+  backoffFactor: 2
+};
+
+const VOICE_OPERATION_TIMEOUT = 30000; // 30 seconds timeout for voice operations
+const MAX_SESSION_DURATION = 600000; // 10 minutes maximum session duration
+const MIN_CONFIDENCE_THRESHOLD = 0.3; // Minimum confidence for accepting transcription
+
+const NON_RETRYABLE_ERRORS = [
+  'permission denied',
+  'microphone not available',
+  'service not available',
+  'user cancelled'
+];
+
+/**
+ * Enhanced Voice-to-Text Service with comprehensive monitoring
+ * OPTIMIZED: Comprehensive error handling, retry logic, and performance monitoring
+ */
 class VoiceToTextService {
   private static instance: VoiceToTextService;
   private isInitialized: boolean = false;
@@ -60,6 +109,16 @@ class VoiceToTextService {
   private pauseTimer: NodeJS.Timeout | null = null;
   private maxDurationTimer: NodeJS.Timeout | null = null;
   private mockTimer: NodeJS.Timeout | null = null;
+  private serviceMetrics: VoiceServiceMetrics = {
+    sessionsStarted: 0,
+    sessionsCompleted: 0,
+    sessionsFailed: 0,
+    totalWordsTranscribed: 0,
+    totalListeningTime: 0,
+    averageConfidence: 0,
+    enhancementsUsed: 0,
+    errorCount: 0
+  };
   
   // Event callbacks
   private onResult: VoiceEventCallback | null = null;
@@ -72,14 +131,18 @@ class VoiceToTextService {
   private confidenceScores: number[] = [];
   private pauseCount: number = 0;
   private errorCount: number = 0;
+  private currentSessionId: string = '';
 
-  // Mock data for development
+  // Enhanced mock data for development
   private mockPhrases = [
-    "This is a test of the voice recognition system.",
-    "The adaptive auto-save feature is working perfectly.",
-    "Scanner tutorial provides excellent user onboarding.",
-    "Voice-to-text integration enhances the note-taking experience.",
-    "Real-time transcription makes NoteSpark AI more accessible.",
+    "This is a test of the voice recognition system with enhanced accuracy and reliability.",
+    "The adaptive auto-save feature is working perfectly and provides seamless user experience.",
+    "Scanner tutorial provides excellent user onboarding with step-by-step guidance.",
+    "Voice-to-text integration enhances the note-taking experience significantly.",
+    "Real-time transcription makes NoteSpark AI more accessible to all users.",
+    "Enhanced error handling ensures robust voice recognition performance.",
+    "Comprehensive monitoring provides detailed insights into service performance.",
+    "Advanced retry mechanisms handle temporary failures gracefully.",
   ];
   private currentMockIndex = 0;
 
@@ -92,6 +155,8 @@ class VoiceToTextService {
       maxDuration: 300, // 5 minutes
       pauseThreshold: 3, // 3 seconds of silence
       enableWhisperEnhancement: false, // Pro feature
+      enableNoiseReduction: true,
+      enableAutoStop: true,
     };
   }
 
@@ -100,6 +165,124 @@ class VoiceToTextService {
       VoiceToTextService.instance = new VoiceToTextService();
     }
     return VoiceToTextService.instance;
+  }
+
+  /**
+   * Enhanced retry mechanism with exponential backoff
+   */
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    options: RetryOptions = DEFAULT_RETRY_OPTIONS
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        
+        // Don't retry for non-retryable errors
+        if (NON_RETRYABLE_ERRORS.some(nonRetryableError => errorMessage.includes(nonRetryableError))) {
+          this.updateMetrics('error', { error: errorMessage });
+          throw error;
+        }
+        
+        if (attempt === options.maxRetries) {
+          break;
+        }
+        
+        const delay = Math.min(
+          options.baseDelay * Math.pow(options.backoffFactor, attempt),
+          options.maxDelay
+        );
+        
+        console.log(`${operationName} attempt ${attempt + 1} failed, retrying in ${delay}ms:`, errorMessage);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    this.updateMetrics('error', { error: lastError!.message });
+    throw new Error(`${operationName} failed after ${options.maxRetries + 1} attempts: ${lastError!.message}`);
+  }
+
+  /**
+   * Validate input parameters
+   */
+  private validateInput(operation: string, data: any): void {
+    switch (operation) {
+      case 'startListening':
+        if (!data.onResult || typeof data.onResult !== 'function') {
+          throw new Error('startListening: onResult callback is required');
+        }
+        if (!data.onError || typeof data.onError !== 'function') {
+          throw new Error('startListening: onError callback is required');
+        }
+        if (!data.onComplete || typeof data.onComplete !== 'function') {
+          throw new Error('startListening: onComplete callback is required');
+        }
+        break;
+      case 'updateSettings':
+        if (!data || typeof data !== 'object') {
+          throw new Error('updateSettings: Settings object is required');
+        }
+        break;
+    }
+  }
+
+  /**
+   * Check if service is available
+   */
+  private isServiceAvailable(): boolean {
+    try {
+      // In production, this would check actual microphone availability
+      return Platform.OS === 'ios' || Platform.OS === 'android';
+    } catch (error) {
+      console.error('Voice Service not available:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update service metrics
+   */
+  private updateMetrics(operation: string, data: any = {}): void {
+    try {
+      switch (operation) {
+        case 'session_started':
+          this.serviceMetrics.sessionsStarted++;
+          break;
+        case 'session_completed':
+          this.serviceMetrics.sessionsCompleted++;
+          this.serviceMetrics.lastSuccess = new Date();
+          if (data.duration) {
+            this.serviceMetrics.totalListeningTime += data.duration;
+          }
+          if (data.wordsTranscribed) {
+            this.serviceMetrics.totalWordsTranscribed += data.wordsTranscribed;
+          }
+          if (data.confidence) {
+            const totalSessions = this.serviceMetrics.sessionsCompleted;
+            this.serviceMetrics.averageConfidence = 
+              (this.serviceMetrics.averageConfidence * (totalSessions - 1) + data.confidence) / totalSessions;
+          }
+          break;
+        case 'session_failed':
+          this.serviceMetrics.sessionsFailed++;
+          break;
+        case 'enhancement_used':
+          this.serviceMetrics.enhancementsUsed++;
+          break;
+        case 'error':
+          this.serviceMetrics.errorCount++;
+          this.serviceMetrics.lastError = data.error || 'Unknown error';
+          break;
+      }
+    } catch (error) {
+      console.error('Error updating voice service metrics:', error);
+    }
   }
 
   // Initialize the voice service
@@ -137,67 +320,86 @@ class VoiceToTextService {
     return true;
   }
 
-  // Start voice recognition
+  // Start voice recognition with enhanced error handling and validation
   public async startListening(
     onResult: VoiceEventCallback,
     onError: VoiceErrorCallback,
     onComplete: VoiceCompleteCallback,
     onVolumeChange?: VoiceVolumeCallback
   ): Promise<boolean> {
-    if (!this.isInitialized) {
-      const initialized = await this.initialize();
-      if (!initialized) {
-        onError('Failed to initialize voice recognition');
-        return false;
-      }
-    }
-
-    if (this.isListening) {
-      onError('Voice recognition is already active');
-      return false;
-    }
-
     try {
-      // Set callbacks
-      this.onResult = onResult;
-      this.onError = onError;
-      this.onComplete = onComplete;
-      this.onVolumeChange = onVolumeChange || null;
+      // Input validation
+      this.validateInput('startListening', { onResult, onError, onComplete });
 
-      // Initialize session metrics
-      this.sessionMetrics = {
-        startTime: Date.now(),
-        endTime: 0,
-        totalDuration: 0,
-        wordsTranscribed: 0,
-        averageConfidence: 0,
-        pauseCount: 0,
-        errorCount: 0,
-        enhancementUsed: false,
-      };
+      // Service availability check
+      if (!this.isServiceAvailable()) {
+        throw new Error('Voice service is not available on this platform');
+      }
 
-      // Clear session data
-      this.transcriptionBuffer = [];
-      this.confidenceScores = [];
-      this.pauseCount = 0;
-      this.errorCount = 0;
-      this.currentMockIndex = 0;
+      if (!this.isInitialized) {
+        const initialized = await this.initialize();
+        if (!initialized) {
+          throw new Error('Failed to initialize voice recognition');
+        }
+      }
 
-      this.isListening = true;
-      console.log('VoiceToTextService: Started listening...');
+      if (this.isListening) {
+        throw new Error('Voice recognition is already active');
+      }
 
-      // Start mock voice recognition simulation
-      this.startMockRecognition();
+      return await this.withRetry(async () => {
+        // Set callbacks
+        this.onResult = onResult;
+        this.onError = onError;
+        this.onComplete = onComplete;
+        this.onVolumeChange = onVolumeChange || null;
 
-      // Set maximum duration timer
-      this.maxDurationTimer = setTimeout(() => {
-        this.stopListening();
-      }, this.settings.maxDuration * 1000);
+        // Generate unique session ID
+        this.currentSessionId = `voice_session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      return true;
+        // Initialize session metrics
+        this.sessionMetrics = {
+          startTime: Date.now(),
+          endTime: 0,
+          totalDuration: 0,
+          wordsTranscribed: 0,
+          averageConfidence: 0,
+          pauseCount: 0,
+          errorCount: 0,
+          enhancementUsed: false,
+          sessionId: this.currentSessionId,
+        };
+
+        // Clear session data
+        this.transcriptionBuffer = [];
+        this.confidenceScores = [];
+        this.pauseCount = 0;
+        this.errorCount = 0;
+        this.currentMockIndex = 0;
+
+        this.isListening = true;
+        this.updateMetrics('session_started');
+        console.log(`VoiceToTextService: Started listening with session ID: ${this.currentSessionId}`);
+
+        // Start mock voice recognition simulation
+        this.startMockRecognition();
+
+        // Set maximum duration timer with timeout protection
+        this.maxDurationTimer = setTimeout(() => {
+          if (this.isListening) {
+            console.log('VoiceToTextService: Maximum duration reached, stopping automatically');
+            this.stopListening();
+          }
+        }, Math.min(this.settings.maxDuration * 1000, MAX_SESSION_DURATION));
+
+        return true;
+      }, 'startListening');
+
     } catch (error) {
       console.error('Failed to start voice recognition:', error);
-      this.onError?.('Failed to start voice recognition');
+      this.updateMetrics('session_failed');
+      this.updateMetrics('error', { error: error instanceof Error ? error.message : String(error) });
+      onError(`Failed to start voice recognition: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }
@@ -471,10 +673,188 @@ class VoiceToTextService {
     ];
   }
 
-  // Analytics tracking
-  public logVoiceEvent(eventName: string, data: any): void {
-    console.log(`VoiceToTextService Analytics: ${eventName}`, data);
-    // In production, this would integrate with Firebase Analytics
+  /**
+   * Get service health status and metrics
+   */
+  public getServiceHealth(): {
+    isHealthy: boolean;
+    metrics: VoiceServiceMetrics;
+    isListening: boolean;
+    serviceStatus: string;
+    currentSession?: string;
+  } {
+    try {
+      const isHealthy = this.isServiceAvailable() && this.serviceMetrics.errorCount < 10;
+      
+      return {
+        isHealthy,
+        metrics: { ...this.serviceMetrics },
+        isListening: this.isListening,
+        serviceStatus: isHealthy ? 'healthy' : 'degraded',
+        currentSession: this.currentSessionId || undefined
+      };
+    } catch (error) {
+      console.error('Error getting voice service health:', error);
+      return {
+        isHealthy: false,
+        metrics: { ...this.serviceMetrics },
+        isListening: false,
+        serviceStatus: 'failed'
+      };
+    }
+  }
+
+  /**
+   * Get service statistics
+   */
+  public getServiceStatistics(): {
+    totalSessions: number;
+    successRate: number;
+    averageSessionDuration: number;
+    totalWordsTranscribed: number;
+    averageConfidence: number;
+    enhancementUsageRate: number;
+    uptime: string;
+  } {
+    try {
+      const totalSessions = this.serviceMetrics.sessionsStarted;
+      const successRate = totalSessions > 0 ? 
+        (this.serviceMetrics.sessionsCompleted / totalSessions) * 100 : 100;
+      const averageSessionDuration = this.serviceMetrics.sessionsCompleted > 0 ? 
+        this.serviceMetrics.totalListeningTime / this.serviceMetrics.sessionsCompleted : 0;
+      const enhancementUsageRate = this.serviceMetrics.sessionsCompleted > 0 ? 
+        (this.serviceMetrics.enhancementsUsed / this.serviceMetrics.sessionsCompleted) * 100 : 0;
+
+      return {
+        totalSessions,
+        successRate: Math.round(successRate * 100) / 100,
+        averageSessionDuration: Math.round(averageSessionDuration / 1000), // Convert to seconds
+        totalWordsTranscribed: this.serviceMetrics.totalWordsTranscribed,
+        averageConfidence: Math.round(this.serviceMetrics.averageConfidence * 10000) / 10000,
+        enhancementUsageRate: Math.round(enhancementUsageRate * 100) / 100,
+        uptime: this.serviceMetrics.lastSuccess ? 
+          `Last success: ${this.serviceMetrics.lastSuccess.toISOString()}` : 
+          'No successful operations yet'
+      };
+    } catch (error) {
+      console.error('Error getting voice service statistics:', error);
+      return {
+        totalSessions: 0,
+        successRate: 0,
+        averageSessionDuration: 0,
+        totalWordsTranscribed: 0,
+        averageConfidence: 0,
+        enhancementUsageRate: 0,
+        uptime: 'Error retrieving statistics'
+      };
+    }
+  }
+
+  /**
+   * Reset service metrics (for testing/debugging)
+   */
+  public resetMetrics(): void {
+    try {
+      this.serviceMetrics = {
+        sessionsStarted: 0,
+        sessionsCompleted: 0,
+        sessionsFailed: 0,
+        totalWordsTranscribed: 0,
+        totalListeningTime: 0,
+        averageConfidence: 0,
+        enhancementsUsed: 0,
+        errorCount: 0
+      };
+      console.log('VoiceToTextService metrics reset successfully');
+    } catch (error) {
+      console.error('Error resetting VoiceToTextService metrics:', error);
+    }
+  }
+
+  // Enhanced mock voice recognition with realistic timing and errors
+  private startMockRecognition(): void {
+    try {
+      let wordIndex = 0;
+      const currentPhrase = this.mockPhrases[this.currentMockIndex % this.mockPhrases.length];
+      const words = currentPhrase.split(' ');
+      let confidenceSum = 0;
+
+      this.mockTimer = setInterval(() => {
+        try {
+          if (!this.isListening || wordIndex >= words.length) {
+            if (this.mockTimer) {
+              clearInterval(this.mockTimer);
+              this.mockTimer = null;
+            }
+            
+            if (this.isListening) {
+              // Simulate completion with realistic delay
+              setTimeout(() => {
+                if (this.isListening) {
+                  this.stopListening();
+                }
+              }, 1000);
+            }
+            return;
+          }
+
+          // Simulate volume changes with more realistic patterns
+          const volume = Math.random() * 0.5 + 0.3; // 0.3 to 0.8
+          this.onVolumeChange?.(volume);
+
+          // Build partial results with progressive accuracy
+          const partialText = words.slice(0, wordIndex + 1).join(' ');
+          const baseConfidence = 0.7 + Math.random() * 0.2; // 0.7 to 0.9
+          
+          // Send partial result
+          const partialResult: VoiceTranscriptionResult = {
+            text: this.processTranscription(partialText),
+            confidence: Math.max(baseConfidence, MIN_CONFIDENCE_THRESHOLD),
+            isFinal: false,
+            timestamp: Date.now(),
+            language: this.settings.language,
+            source: 'native',
+            processingTime: 50 + Math.random() * 100, // 50-150ms processing time
+          };
+          
+          this.onResult?.(partialResult);
+          confidenceSum += partialResult.confidence;
+          
+          wordIndex++;
+          
+          // Send final result when complete
+          if (wordIndex >= words.length) {
+            const finalConfidence = 0.85 + Math.random() * 0.1; // 0.85 to 0.95
+            const finalResult: VoiceTranscriptionResult = {
+              text: this.processTranscription(currentPhrase),
+              confidence: finalConfidence,
+              isFinal: true,
+              timestamp: Date.now(),
+              language: this.settings.language,
+              source: 'native',
+              processingTime: 100 + Math.random() * 150, // 100-250ms processing time
+            };
+            
+            this.transcriptionBuffer.push(finalResult.text);
+            this.confidenceScores.push(finalResult.confidence);
+            
+            if (this.sessionMetrics) {
+              this.sessionMetrics.wordsTranscribed += words.length;
+            }
+            
+            this.onResult?.(finalResult);
+            this.currentMockIndex++;
+          }
+        } catch (error) {
+          console.error('Error in mock recognition loop:', error);
+          this.errorCount++;
+          this.onError?.(`Mock recognition error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }, 500 + Math.random() * 300); // 500-800ms per word for realistic timing
+    } catch (error) {
+      console.error('Error starting mock recognition:', error);
+      this.onError?.(`Failed to start mock recognition: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // Cleanup

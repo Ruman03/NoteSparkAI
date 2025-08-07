@@ -2,6 +2,7 @@
  * Real Voice-to-Text Service using @react-native-voice/voice
  * Replaces VoiceToTextServiceMock with production voice recognition
  * Maintains same interface for seamless component integration
+ * OPTIMIZED: Enhanced with comprehensive error handling, retry logic, and metrics tracking
  */
 
 import Voice, {
@@ -14,9 +15,24 @@ import Voice, {
 import { Platform } from 'react-native';
 import RNFS from 'react-native-fs';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
-// Note: Firebase analytics will be added when Firebase is properly set up
-// import analytics from '@react-native-firebase/analytics';
-// Note: FFmpeg will be added later for Whisper API integration
+
+// Enhanced interfaces for better type safety
+interface RetryOptions {
+  maxRetries: number;
+  baseDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+}
+
+interface VoiceServiceMetrics {
+  requestCount: number;
+  successCount: number;
+  errorCount: number;
+  averageSessionDuration: number;
+  totalWordsTranscribed: number;
+  lastSuccess?: Date;
+  lastError?: string;
+}
 
 // Types (maintaining compatibility with existing components)
 export interface VoiceTranscriptionResult {
@@ -26,6 +42,11 @@ export interface VoiceTranscriptionResult {
   timestamp: number;
   language: string;
   source: 'native' | 'whisper';
+  metadata?: {
+    wordCount: number;
+    processingTime: number;
+    sessionId: string;
+  };
 }
 
 export interface VoiceSessionMetrics {
@@ -37,6 +58,7 @@ export interface VoiceSessionMetrics {
   pauseCount: number;
   errorCount: number;
   enhancementUsed: boolean;
+  sessionId: string;
 }
 
 export interface VoiceSettings {
@@ -47,12 +69,36 @@ export interface VoiceSettings {
   maxDuration: number; // in milliseconds
   pauseThreshold: number; // in milliseconds
   enableWhisperEnhancement: boolean; // Pro feature flag
+  timeout?: number;
 }
 
 type VoiceResultCallback = (result: VoiceTranscriptionResult) => void;
 type VoiceErrorCallback = (error: string) => void;
 type VoiceCompleteCallback = (metrics: VoiceSessionMetrics) => void;
 type VoiceVolumeCallback = (volume: number) => void;
+
+// Enhanced constants
+const DEFAULT_RETRY_OPTIONS: RetryOptions = {
+  maxRetries: 3,
+  baseDelay: 1000,
+  maxDelay: 5000,
+  backoffFactor: 2
+};
+
+const VOICE_TIMEOUT = 60000; // 60 seconds default timeout
+const SUPPORTED_LANGUAGES = [
+  'en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE', 
+  'it-IT', 'pt-BR', 'ja-JP', 'ko-KR', 'zh-CN'
+];
+
+const NON_RETRYABLE_ERRORS = [
+  'permission denied',
+  'microphone access',
+  'already listening',
+  'not supported',
+  'invalid language',
+  'user denied'
+];
 
 /**
  * Production Voice-to-Text Service
@@ -63,12 +109,16 @@ class VoiceToTextService {
   private static instance: VoiceToTextService;
   private isInitialized = false;
   private isListening = false;
+  private currentSessionId = '';
   private currentSession: {
     onResult?: VoiceResultCallback;
     onError?: VoiceErrorCallback;
     onComplete?: VoiceCompleteCallback;
     onVolumeChange?: VoiceVolumeCallback;
   } = {};
+
+  private readonly metrics: VoiceServiceMetrics;
+  private readonly retryOptions: RetryOptions;
 
   private settings: VoiceSettings = {
     language: 'en-US',
@@ -78,6 +128,7 @@ class VoiceToTextService {
     maxDuration: 60000, // 1 minute
     pauseThreshold: 1000, // 1 second
     enableWhisperEnhancement: false, // Pro feature
+    timeout: VOICE_TIMEOUT
   };
 
   private sessionMetrics: VoiceSessionMetrics = {
@@ -89,6 +140,7 @@ class VoiceToTextService {
     pauseCount: 0,
     errorCount: 0,
     enhancementUsed: false,
+    sessionId: ''
   };
 
   private confidenceScores: number[] = [];
@@ -96,6 +148,22 @@ class VoiceToTextService {
   private lastSpeechTime = 0;
   private retryAttempts = 0;
   private maxRetryAttempts = 3;
+
+  constructor() {
+    // Initialize service metrics
+    this.metrics = {
+      requestCount: 0,
+      successCount: 0,
+      errorCount: 0,
+      averageSessionDuration: 0,
+      totalWordsTranscribed: 0
+    };
+
+    this.retryOptions = { ...DEFAULT_RETRY_OPTIONS };
+    console.log('VoiceToTextService: Enhanced instance created with comprehensive capabilities');
+    
+    this.initializeVoiceRecognition();
+  }
 
   // OPTIMIZED: Enhanced retry mechanism for voice operations
   private async withRetry<T>(
@@ -194,8 +262,51 @@ class VoiceToTextService {
     return VoiceToTextService.instance;
   }
 
-  constructor() {
-    this.initializeVoiceRecognition();
+  /**
+   * Update service metrics
+   */
+  private updateMetrics(success: boolean, sessionDuration?: number, wordsTranscribed?: number, errorMessage?: string): void {
+    this.metrics.requestCount++;
+    
+    if (success) {
+      this.metrics.successCount++;
+      this.metrics.lastSuccess = new Date();
+      
+      if (sessionDuration) {
+        // Update average session duration with weighted average
+        const weight = 0.1; // 10% weight for new measurement
+        this.metrics.averageSessionDuration = 
+          this.metrics.averageSessionDuration * (1 - weight) + sessionDuration * weight;
+      }
+      
+      if (wordsTranscribed) {
+        this.metrics.totalWordsTranscribed += wordsTranscribed;
+      }
+    } else {
+      this.metrics.errorCount++;
+      this.metrics.lastError = errorMessage;
+    }
+  }
+
+  /**
+   * Check if the service is available and properly initialized
+   */
+  isServiceAvailable(): boolean {
+    return this.isInitialized && !this.isListening;
+  }
+
+  /**
+   * Get service metrics
+   */
+  getServiceMetrics(): VoiceServiceMetrics {
+    return { ...this.metrics };
+  }
+
+  /**
+   * Generate unique session ID
+   */
+  private generateSessionId(): string {
+    return `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -248,6 +359,7 @@ class VoiceToTextService {
    * Reset session metrics for new voice session
    */
   private resetSessionMetrics(): void {
+    this.currentSessionId = this.generateSessionId();
     this.sessionMetrics = {
       startTime: Date.now(),
       endTime: 0,
@@ -257,13 +369,15 @@ class VoiceToTextService {
       pauseCount: 0,
       errorCount: 0,
       enhancementUsed: false,
+      sessionId: this.currentSessionId
     };
     this.confidenceScores = [];
     this.lastSpeechTime = Date.now();
+    console.log(`VoiceToTextService: Session initialized with ID: ${this.currentSessionId}`);
   }
 
   /**
-   * Start listening for voice input
+   * Start listening for voice input with enhanced error handling
    */
   async startListening(
     onResult: VoiceResultCallback,
@@ -271,22 +385,27 @@ class VoiceToTextService {
     onComplete: VoiceCompleteCallback,
     onVolumeChange?: VoiceVolumeCallback
   ): Promise<void> {
-    try {
+    return this.withRetry(async () => {
       if (!this.isInitialized) {
         await this.initializeVoiceRecognition();
       }
 
       if (this.isListening) {
-        onError('Voice recognition is already active');
-        return;
+        throw new Error('VoiceToTextService: Voice recognition is already active');
+      }
+
+      // Validate callbacks
+      if (!onResult || !onError || !onComplete) {
+        throw new Error('VoiceToTextService: Required callbacks (onResult, onError, onComplete) must be provided');
       }
 
       // Request microphone permission
       const hasPermission = await this.requestMicrophonePermission();
       if (!hasPermission) {
-        onError('Microphone permission denied. Please enable microphone access in settings.');
+        const error = 'Microphone permission denied. Please enable microphone access in settings.';
+        this.updateMetrics(false, undefined, undefined, error);
         this.logAnalyticsEvent('voice_error', { error_type: 'permission_denied' });
-        return;
+        throw new Error(error);
       }
 
       // Store callbacks
@@ -300,43 +419,43 @@ class VoiceToTextService {
       // Reset metrics
       this.resetSessionMetrics();
 
-      // Start voice recognition
-      await Voice.start(this.settings.language);
-      this.isListening = true;
+      // Start voice recognition with timeout protection
+      await Promise.race([
+        Voice.start(this.settings.language),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Voice start timeout')), this.settings.timeout || VOICE_TIMEOUT)
+        )
+      ]);
 
-      console.log('VoiceToTextService: Started listening...');
+      this.isListening = true;
+      console.log(`VoiceToTextService: Started listening with session ID: ${this.currentSessionId}`);
 
       // Set maximum session timeout
       this.sessionTimeout = setTimeout(() => {
+        console.log('VoiceToTextService: Session timeout reached, stopping...');
         this.stopListening();
       }, this.settings.maxDuration);
 
       // Log analytics
       this.logAnalyticsEvent('voice_started', { 
+        sessionId: this.currentSessionId,
         settings: this.settings 
       });
 
-    } catch (error) {
-      console.error('VoiceToTextService: Failed to start listening:', error);
-      this.isListening = false;
-      onError(`Failed to start voice recognition: ${error}`);
-      this.logAnalyticsEvent('voice_error', { 
-        error_type: 'start_failed', 
-        error_message: String(error) 
-      });
-    }
+    }, 'startListening');
   }
 
   /**
-   * Stop listening for voice input
+   * Stop listening for voice input with enhanced cleanup
    */
   async stopListening(): Promise<void> {
-    try {
+    return this.withRetry(async () => {
       if (!this.isListening) {
+        console.log('VoiceToTextService: Already stopped, ignoring stop request');
         return;
       }
 
-      console.log('VoiceToTextService: Stopping voice recognition...');
+      console.log(`VoiceToTextService: Stopping voice recognition for session ${this.currentSessionId}...`);
       
       // Clear timeout
       if (this.sessionTimeout) {
@@ -344,16 +463,28 @@ class VoiceToTextService {
         this.sessionTimeout = undefined;
       }
 
-      // Stop voice recognition
-      await Voice.stop();
+      // Stop voice recognition with timeout protection
+      await Promise.race([
+        Voice.stop(),
+        new Promise<void>((resolve) => 
+          setTimeout(() => {
+            console.warn('VoiceToTextService: Stop operation timed out, forcing stop');
+            resolve();
+          }, 5000)
+        )
+      ]);
+
       this.isListening = false;
 
       // Calculate final metrics
       const metrics = this.calculateSessionMetrics();
       
+      // Update service metrics
+      this.updateMetrics(true, metrics.totalDuration, metrics.wordsTranscribed);
+      
       console.log('VoiceToTextService: Session completed', metrics);
 
-      // Call completion callback
+      // Call completion callback if available
       if (this.currentSession.onComplete) {
         this.currentSession.onComplete(metrics);
       }
@@ -366,23 +497,22 @@ class VoiceToTextService {
 
       // Clear callbacks
       this.currentSession = {};
+      this.currentSessionId = '';
 
-    } catch (error) {
-      console.error('VoiceToTextService: Failed to stop listening:', error);
-      this.sessionMetrics.errorCount++;
-    }
+    }, 'stopListening', 2); // Fewer retries for stop operation
   }
 
   /**
-   * Cancel current voice session
+   * Cancel current voice session with enhanced cleanup
    */
   async cancelListening(): Promise<void> {
-    try {
+    return this.withRetry(async () => {
       if (!this.isListening) {
+        console.log('VoiceToTextService: No active session to cancel');
         return;
       }
 
-      console.log('VoiceToTextService: Cancelling voice recognition...');
+      console.log(`VoiceToTextService: Cancelling voice recognition for session ${this.currentSessionId}...`);
 
       // Clear timeout
       if (this.sessionTimeout) {
@@ -390,47 +520,67 @@ class VoiceToTextService {
         this.sessionTimeout = undefined;
       }
 
-      // Cancel voice recognition
-      await Voice.cancel();
+      // Cancel voice recognition with timeout protection
+      await Promise.race([
+        Voice.cancel(),
+        new Promise<void>((resolve) => 
+          setTimeout(() => {
+            console.warn('VoiceToTextService: Cancel operation timed out, forcing cancellation');
+            resolve();
+          }, 3000)
+        )
+      ]);
+
       this.isListening = false;
+
+      // Update service metrics for cancelled session
+      this.updateMetrics(false, undefined, undefined, 'User cancelled session');
 
       // Log analytics
       this.logAnalyticsEvent('voice_session_cancelled', {
+        sessionId: this.currentSessionId,
         duration: Date.now() - this.sessionMetrics.startTime,
         reason: 'user_cancelled'
       });
 
-      // Clear callbacks
+      // Clear callbacks and session data
       this.currentSession = {};
+      this.currentSessionId = '';
 
-      console.log('VoiceToTextService: Voice session cancelled');
+      console.log('VoiceToTextService: Voice session cancelled successfully');
 
+    }, 'cancelListening', 2); // Fewer retries for cancel operation
+  }
+
+  /**
+   * Update voice recognition settings with validation
+   */
+  updateSettings(newSettings: Partial<VoiceSettings>): void {
+    try {
+      // Validate new settings
+      this.validateVoiceSettings(newSettings);
+      
+      const oldSettings = { ...this.settings };
+      this.settings = { ...this.settings, ...newSettings };
+      
+      console.log('VoiceToTextService: Settings updated successfully', this.settings);
+      
+      // Log settings change for each modified property
+      Object.keys(newSettings).forEach(key => {
+        this.logAnalyticsEvent('voice_settings_changed', {
+          setting: key,
+          old_value: oldSettings[key as keyof VoiceSettings],
+          new_value: newSettings[key as keyof VoiceSettings]
+        });
+      });
     } catch (error) {
-      console.error('VoiceToTextService: Failed to cancel listening:', error);
+      console.error('VoiceToTextService: Failed to update settings:', error);
+      throw new Error(`Settings update failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
-   * Update voice recognition settings
-   */
-  updateSettings(newSettings: Partial<VoiceSettings>): void {
-    const oldSettings = { ...this.settings };
-    this.settings = { ...this.settings, ...newSettings };
-    
-    console.log('VoiceToTextService: Settings updated', this.settings);
-    
-    // Log settings change
-    Object.keys(newSettings).forEach(key => {
-      this.logAnalyticsEvent('voice_settings_changed', {
-        setting: key,
-        old_value: oldSettings[key as keyof VoiceSettings],
-        new_value: newSettings[key as keyof VoiceSettings]
-      });
-    });
-  }
-
-  /**
-   * Get current settings
+   * Get current settings (immutable copy)
    */
   getSettings(): VoiceSettings {
     return { ...this.settings };
@@ -443,175 +593,294 @@ class VoiceToTextService {
     return this.isListening;
   }
 
-  // Event Handlers
+  /**
+   * Get current session ID (if active)
+   */
+  getCurrentSessionId(): string | null {
+    return this.isListening ? this.currentSessionId : null;
+  }
+
+  // Enhanced Event Handlers with better error handling
 
   private onSpeechStart(event: SpeechStartEvent): void {
-    console.log('VoiceToTextService: Speech started');
-    this.lastSpeechTime = Date.now();
+    try {
+      console.log(`VoiceToTextService: Speech started for session ${this.currentSessionId}`);
+      this.lastSpeechTime = Date.now();
+      
+      this.logAnalyticsEvent('voice_speech_start', {
+        sessionId: this.currentSessionId,
+        timestamp: this.lastSpeechTime
+      });
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechStart:', error);
+    }
   }
 
   private onSpeechRecognized(): void {
-    console.log('VoiceToTextService: Speech recognized');
-    this.lastSpeechTime = Date.now();
+    try {
+      console.log(`VoiceToTextService: Speech recognized for session ${this.currentSessionId}`);
+      this.lastSpeechTime = Date.now();
+      
+      this.logAnalyticsEvent('voice_speech_recognized', {
+        sessionId: this.currentSessionId,
+        timestamp: this.lastSpeechTime
+      });
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechRecognized:', error);
+    }
   }
 
   private onSpeechEnd(): void {
-    console.log('VoiceToTextService: Speech ended');
-    // Auto-stop if no speech for pause threshold
-    setTimeout(() => {
-      if (this.isListening && Date.now() - this.lastSpeechTime > this.settings.pauseThreshold) {
-        this.sessionMetrics.pauseCount++;
-        this.stopListening();
-      }
-    }, this.settings.pauseThreshold);
+    try {
+      console.log(`VoiceToTextService: Speech ended for session ${this.currentSessionId}`);
+      
+      // Auto-stop if no speech for pause threshold
+      setTimeout(() => {
+        if (this.isListening && Date.now() - this.lastSpeechTime > this.settings.pauseThreshold) {
+          console.log('VoiceToTextService: Pause threshold exceeded, stopping session');
+          this.sessionMetrics.pauseCount++;
+          this.stopListening();
+        }
+      }, this.settings.pauseThreshold);
+      
+      this.logAnalyticsEvent('voice_speech_end', {
+        sessionId: this.currentSessionId,
+        pauseThreshold: this.settings.pauseThreshold
+      });
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechEnd:', error);
+    }
   }
 
   private onSpeechError(error: SpeechErrorEvent): void {
-    console.error('VoiceToTextService: Speech error:', error);
-    this.sessionMetrics.errorCount++;
-    
-    let errorMessage = 'An error occurred during voice recognition';
-    
-    // Handle specific error codes
-    if (error.error) {
-      switch (error.error.code) {
-        case '7':
-          errorMessage = 'No speech detected. Please try speaking more clearly.';
-          break;
-        case '8':
-          errorMessage = 'Recognition timeout. Please try again.';
-          break;
-        case '9':
-          errorMessage = 'Audio recording error. Please check your microphone.';
-          break;
-        default:
-          errorMessage = `Recognition error: ${error.error.message || 'Unknown error'}`;
+    try {
+      console.error(`VoiceToTextService: Speech error for session ${this.currentSessionId}:`, error);
+      this.sessionMetrics.errorCount++;
+      
+      let errorMessage = 'An error occurred during voice recognition';
+      
+      // Handle specific error codes with enhanced messaging
+      if (error.error) {
+        switch (error.error.code) {
+          case '7':
+            errorMessage = 'No speech detected. Please try speaking more clearly.';
+            break;
+          case '8':
+            errorMessage = 'Recognition timeout. Please try again.';
+            break;
+          case '9':
+            errorMessage = 'Audio recording error. Please check your microphone.';
+            break;
+          case '6':
+            errorMessage = 'No network connection. Please check your internet connection.';
+            break;
+          case '5':
+            errorMessage = 'Recognition service error. Please try again later.';
+            break;
+          default:
+            errorMessage = `Recognition error: ${error.error.message || 'Unknown error'}`;
+        }
       }
-    }
 
-    this.isListening = false;
-    
-    if (this.currentSession.onError) {
-      this.currentSession.onError(errorMessage);
-    }
+      this.isListening = false;
+      
+      // Update service metrics
+      this.updateMetrics(false, undefined, undefined, errorMessage);
+      
+      // Call error callback if available
+      if (this.currentSession.onError) {
+        this.currentSession.onError(errorMessage);
+      }
 
-    this.logAnalyticsEvent('voice_error', {
-      error_type: error.error?.code || 'unknown',
-      error_message: errorMessage
-    });
+      this.logAnalyticsEvent('voice_error', {
+        sessionId: this.currentSessionId,
+        error_type: error.error?.code || 'unknown',
+        error_message: errorMessage
+      });
+    } catch (handlerError) {
+      console.error('VoiceToTextService: Error in onSpeechError handler:', handlerError);
+    }
   }
 
   private onSpeechResults(event: SpeechResultsEvent): void {
-    const results = event.value || [];
-    if (results.length > 0) {
-      const text = results[0];
-      const confidence = this.estimateConfidence(text, true);
-      
-      this.confidenceScores.push(confidence);
-      this.sessionMetrics.wordsTranscribed = this.calculateWordCount(text);
-      
-      const result: VoiceTranscriptionResult = {
-        text: this.processText(text),
-        confidence,
-        isFinal: true,
-        timestamp: Date.now(),
-        language: this.settings.language,
-        source: 'native'
-      };
+    try {
+      const results = event.value || [];
+      if (results.length > 0) {
+        const text = results[0];
+        const confidence = this.estimateConfidence(text, true);
+        
+        this.confidenceScores.push(confidence);
+        this.sessionMetrics.wordsTranscribed = this.calculateWordCount(text);
+        
+        const result: VoiceTranscriptionResult = {
+          text: this.processText(text),
+          confidence,
+          isFinal: true,
+          timestamp: Date.now(),
+          language: this.settings.language,
+          source: 'native',
+          metadata: {
+            wordCount: this.sessionMetrics.wordsTranscribed,
+            processingTime: Date.now() - this.sessionMetrics.startTime,
+            sessionId: this.currentSessionId
+          }
+        };
 
-      console.log('VoiceToTextService: Final result:', result);
+        console.log(`VoiceToTextService: Final result for session ${this.currentSessionId}:`, result);
 
-      if (this.currentSession.onResult) {
-        this.currentSession.onResult(result);
+        // Call result callback if available
+        if (this.currentSession.onResult) {
+          this.currentSession.onResult(result);
+        }
+
+        this.logAnalyticsEvent('voice_transcription', {
+          sessionId: this.currentSessionId,
+          text_length: result.text.length,
+          confidence: result.confidence,
+          is_final: result.isFinal,
+          source: result.source,
+          word_count: result.metadata?.wordCount
+        });
       }
-
-      this.logAnalyticsEvent('voice_transcription', {
-        text_length: result.text.length,
-        confidence: result.confidence,
-        is_final: result.isFinal,
-        source: result.source
-      });
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechResults:', error);
+      this.sessionMetrics.errorCount++;
     }
   }
 
   private onSpeechPartialResults(event: SpeechResultsEvent): void {
-    const results = event.value || [];
-    if (results.length > 0) {
-      const text = results[0];
-      const confidence = this.estimateConfidence(text, false);
-      
-      const result: VoiceTranscriptionResult = {
-        text: this.processText(text),
-        confidence,
-        isFinal: false,
-        timestamp: Date.now(),
-        language: this.settings.language,
-        source: 'native'
-      };
+    try {
+      const results = event.value || [];
+      if (results.length > 0) {
+        const text = results[0];
+        const confidence = this.estimateConfidence(text, false);
+        
+        const result: VoiceTranscriptionResult = {
+          text: this.processText(text),
+          confidence,
+          isFinal: false,
+          timestamp: Date.now(),
+          language: this.settings.language,
+          source: 'native',
+          metadata: {
+            wordCount: this.calculateWordCount(text),
+            processingTime: Date.now() - this.sessionMetrics.startTime,
+            sessionId: this.currentSessionId
+          }
+        };
 
-      if (this.currentSession.onResult) {
-        this.currentSession.onResult(result);
+        // Call result callback if available
+        if (this.currentSession.onResult) {
+          this.currentSession.onResult(result);
+        }
+
+        this.logAnalyticsEvent('voice_transcription', {
+          sessionId: this.currentSessionId,
+          text_length: result.text.length,
+          confidence: result.confidence,
+          is_final: result.isFinal,
+          source: result.source,
+          word_count: result.metadata?.wordCount
+        });
       }
-
-      this.logAnalyticsEvent('voice_transcription', {
-        text_length: result.text.length,
-        confidence: result.confidence,
-        is_final: result.isFinal,
-        source: result.source
-      });
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechPartialResults:', error);
     }
   }
 
   private onSpeechVolumeChanged(event: SpeechVolumeChangeEvent): void {
-    const volume = event.value || 0;
-    
-    if (this.currentSession.onVolumeChange) {
-      this.currentSession.onVolumeChange(volume);
+    try {
+      const volume = event.value || 0;
+      
+      // Call volume callback if available
+      if (this.currentSession.onVolumeChange) {
+        this.currentSession.onVolumeChange(volume);
+      }
+    } catch (error) {
+      console.error('VoiceToTextService: Error in onSpeechVolumeChanged:', error);
     }
   }
 
-  // Utility Methods
+  // Enhanced Utility Methods
 
   private processText(text: string): string {
-    let processed = text;
+    try {
+      if (!text || typeof text !== 'string') {
+        return '';
+      }
 
-    // Apply capitalization
-    if (this.settings.enableCapitalization) {
-      processed = processed.charAt(0).toUpperCase() + processed.slice(1);
+      let processed = text.trim();
+
+      // Apply capitalization
+      if (this.settings.enableCapitalization && processed.length > 0) {
+        processed = processed.charAt(0).toUpperCase() + processed.slice(1);
+      }
+
+      // Apply punctuation (basic implementation)
+      if (this.settings.enablePunctuation && processed.length > 0 && !processed.match(/[.!?]$/)) {
+        processed += '.';
+      }
+
+      return processed;
+    } catch (error) {
+      console.error('VoiceToTextService: Error processing text:', error);
+      return text || '';
     }
-
-    // Apply punctuation (basic)
-    if (this.settings.enablePunctuation && !processed.match(/[.!?]$/)) {
-      processed += '.';
-    }
-
-    return processed;
   }
 
   private estimateConfidence(text: string, isFinal: boolean): number {
-    // Simple confidence estimation based on text length and finality
-    const baseConfidence = isFinal ? 0.85 : 0.70;
-    const lengthBonus = Math.min(text.length * 0.01, 0.15);
-    return Math.min(baseConfidence + lengthBonus, 1.0);
+    try {
+      if (!text || typeof text !== 'string') {
+        return 0.5; // Default medium confidence for invalid input
+      }
+
+      // Simple confidence estimation based on text length and finality
+      const baseConfidence = isFinal ? 0.85 : 0.70;
+      const lengthBonus = Math.min(text.length * 0.01, 0.15);
+      const result = Math.min(baseConfidence + lengthBonus, 1.0);
+      
+      return Math.max(result, 0.1); // Minimum confidence of 10%
+    } catch (error) {
+      console.error('VoiceToTextService: Error estimating confidence:', error);
+      return 0.5;
+    }
   }
 
   private calculateWordCount(text: string): number {
-    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+    try {
+      if (!text || typeof text !== 'string') {
+        return 0;
+      }
+      return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+    } catch (error) {
+      console.error('VoiceToTextService: Error calculating word count:', error);
+      return 0;
+    }
   }
 
   private calculateSessionMetrics(): VoiceSessionMetrics {
-    const endTime = Date.now();
-    const totalDuration = endTime - this.sessionMetrics.startTime;
-    const averageConfidence = this.confidenceScores.length > 0
-      ? this.confidenceScores.reduce((sum, score) => sum + score, 0) / this.confidenceScores.length
-      : 0;
+    try {
+      const endTime = Date.now();
+      const totalDuration = endTime - this.sessionMetrics.startTime;
+      const averageConfidence = this.confidenceScores.length > 0
+        ? this.confidenceScores.reduce((sum, score) => sum + score, 0) / this.confidenceScores.length
+        : 0;
 
-    return {
-      ...this.sessionMetrics,
-      endTime,
-      totalDuration,
-      averageConfidence,
-    };
+      return {
+        ...this.sessionMetrics,
+        endTime,
+        totalDuration,
+        averageConfidence: Math.round(averageConfidence * 100) / 100, // Round to 2 decimal places
+      };
+    } catch (error) {
+      console.error('VoiceToTextService: Error calculating session metrics:', error);
+      return {
+        ...this.sessionMetrics,
+        endTime: Date.now(),
+        totalDuration: Date.now() - this.sessionMetrics.startTime,
+        averageConfidence: 0
+      };
+    }
   }
 
   private async cleanupTempFiles(): Promise<void> {
@@ -629,41 +898,122 @@ class VoiceToTextService {
 
   private logAnalyticsEvent(eventName: string, parameters: any): void {
     try {
+      // Enhanced analytics logging with error handling
+      const safeParameters = {
+        ...parameters,
+        timestamp: Date.now(),
+        platform: Platform.OS,
+        service_version: '2.0.0'
+      };
+      
       // TODO: Replace with actual Firebase analytics when available
-      // analytics().logEvent(eventName, parameters);
-      console.log(`VoiceToTextService Analytics: ${eventName}`, parameters);
+      // analytics().logEvent(eventName, safeParameters);
+      console.log(`VoiceToTextService Analytics: ${eventName}`, safeParameters);
     } catch (error) {
       console.warn('VoiceToTextService: Failed to log analytics event:', error);
     }
   }
 
   /**
-   * Get available languages for voice recognition
+   * Get available languages for voice recognition with enhanced error handling
    */
   async getAvailableLanguages(): Promise<string[]> {
+    return this.withRetry(async () => {
+      try {
+        const languages = await Voice.getSpeechRecognitionServices();
+        
+        if (Array.isArray(languages) && languages.length > 0) {
+          console.log('VoiceToTextService: Retrieved languages from device:', languages);
+          return languages;
+        }
+        
+        // Fallback to supported languages if device query fails
+        console.log('VoiceToTextService: Using fallback language list');
+        return SUPPORTED_LANGUAGES;
+      } catch (error) {
+        console.warn('VoiceToTextService: Failed to get device languages, using fallback:', error);
+        return SUPPORTED_LANGUAGES;
+      }
+    }, 'getAvailableLanguages', 2);
+  }
+
+  /**
+   * Health check for voice service
+   */
+  async checkServiceHealth(): Promise<boolean> {
     try {
-      const languages = await Voice.getSpeechRecognitionServices();
-      return Array.isArray(languages) ? languages : ['en-US'];
+      if (!this.isInitialized) {
+        return false;
+      }
+      
+      // Check if Voice module is available
+      const isAvailable = await Voice.isAvailable();
+      const result = Boolean(isAvailable);
+      console.log('VoiceToTextService: Service health check result:', result);
+      return result;
     } catch (error) {
-      console.warn('VoiceToTextService: Failed to get available languages:', error);
-      return ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE'];
+      console.warn('VoiceToTextService: Health check failed:', error);
+      return false;
     }
   }
 
   /**
-   * Cleanup and destroy voice service
+   * Cleanup and destroy voice service with enhanced cleanup
    */
   async destroy(): Promise<void> {
-    try {
-      if (this.isListening) {
-        await this.cancelListening();
+    return this.withRetry(async () => {
+      try {
+        console.log('VoiceToTextService: Destroying service...');
+        
+        if (this.isListening) {
+          await this.cancelListening();
+        }
+        
+        // Voice.destroy() will clean up event handlers automatically
+        await Voice.destroy();
+        
+        this.isInitialized = false;
+        this.currentSession = {};
+        this.currentSessionId = '';
+        
+        console.log('VoiceToTextService: Service destroyed successfully');
+        
+        this.logAnalyticsEvent('voice_service_destroyed', {
+          total_sessions: this.metrics.requestCount,
+          success_rate: this.metrics.requestCount > 0 ? (this.metrics.successCount / this.metrics.requestCount) * 100 : 0
+        });
+      } catch (error) {
+        console.error('VoiceToTextService: Failed to destroy service:', error);
+        throw error;
       }
-      
-      await Voice.destroy();
-      console.log('VoiceToTextService: Service destroyed');
-    } catch (error) {
-      console.error('VoiceToTextService: Failed to destroy service:', error);
-    }
+    }, 'destroy', 2);
+  }
+
+  /**
+   * Get comprehensive service statistics
+   */
+  getServiceStatistics(): {
+    metrics: VoiceServiceMetrics;
+    currentSession: {
+      isActive: boolean;
+      sessionId: string | null;
+      duration: number;
+    };
+    settings: VoiceSettings;
+  } {
+    const currentDuration = this.isListening 
+      ? Date.now() - this.sessionMetrics.startTime 
+      : 0;
+    
+    return {
+      metrics: this.getServiceMetrics(),
+      currentSession: {
+        isActive: this.isListening,
+        sessionId: this.getCurrentSessionId(),
+        duration: currentDuration
+      },
+      settings: this.getSettings()
+    };
   }
 }
 
