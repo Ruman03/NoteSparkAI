@@ -8,6 +8,9 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  RefreshControl,
+  Animated,
+  Easing
 } from 'react-native';
 import {
   Appbar,
@@ -24,6 +27,9 @@ import {
   Chip,
   Portal,
   Modal,
+  Badge,
+  ProgressBar,
+  Snackbar
 } from 'react-native-paper';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { RichEditor, RichToolbar, actions, FONT_SIZE } from 'react-native-pell-rich-editor';
@@ -38,6 +44,35 @@ import type { EditorScreenNavigationProp, RootStackParamList } from '../types/na
 import auth from '@react-native-firebase/auth';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'Editor'>;
+
+// Enhanced interfaces for enterprise-grade analytics and Gemini integration
+interface EditorMetrics {
+  totalEditorSessions: number;
+  totalWordsWritten: number;
+  averageSessionDuration: number;
+  geminiSuggestionsUsed: number;
+  voiceInputSessions: number;
+  averageWordsPerMinute: number;
+  lastSessionTime?: Date;
+  aiAssistanceAcceptanceRate: number;
+}
+
+interface GeminiAssistance {
+  isActive: boolean;
+  currentSuggestion: string;
+  suggestionType: 'completion' | 'grammar' | 'style' | 'structure';
+  confidence: number;
+  lastSuggestionTime?: Date;
+}
+
+interface WritingAnalytics {
+  sessionStartTime: Date;
+  wordsWritten: number;
+  keystrokesCount: number;
+  pausesCount: number;
+  backspacesCount: number;
+  averageTypingSpeed: number;
+}
 
 // OPTIMIZED: Consolidated state management with useReducer
 interface EditorState {
@@ -70,6 +105,12 @@ interface EditorState {
   linkText: string;
   tableRows: number;
   tableCols: number;
+  refreshing: boolean;
+  showGeminiAssist: boolean;
+  showAnalytics: boolean;
+  metrics: EditorMetrics;
+  geminiAssistance: GeminiAssistance;
+  writingAnalytics: WritingAnalytics;
 }
 
 type EditorAction =
@@ -99,7 +140,13 @@ type EditorAction =
   | { type: 'SET_TABLE_COLS'; payload: number }
   | { type: 'SET_LINK_TEXT'; payload: string }
   | { type: 'SET_LINK_URL'; payload: string }
-  | { type: 'RESET_MODALS' };
+  | { type: 'RESET_MODALS' }
+  | { type: 'TOGGLE_GEMINI_ASSIST' }
+  | { type: 'TOGGLE_ANALYTICS' }
+  | { type: 'SET_REFRESHING'; payload: boolean }
+  | { type: 'UPDATE_METRICS'; payload: Partial<EditorMetrics> }
+  | { type: 'UPDATE_GEMINI_SUGGESTION'; payload: Partial<GeminiAssistance> }
+  | { type: 'UPDATE_WRITING_ANALYTICS'; payload: Partial<WritingAnalytics> };
 
 const initialEditorState: EditorState = {
   isLoading: true,
@@ -131,6 +178,32 @@ const initialEditorState: EditorState = {
   linkText: '',
   tableRows: 2,
   tableCols: 2,
+  refreshing: false,
+  showGeminiAssist: false,
+  showAnalytics: false,
+  metrics: {
+    totalEditorSessions: 0,
+    totalWordsWritten: 0,
+    averageSessionDuration: 0,
+    geminiSuggestionsUsed: 0,
+    voiceInputSessions: 0,
+    averageWordsPerMinute: 0,
+    aiAssistanceAcceptanceRate: 0
+  },
+  geminiAssistance: {
+    isActive: false,
+    currentSuggestion: '',
+    suggestionType: 'completion',
+    confidence: 0
+  },
+  writingAnalytics: {
+    sessionStartTime: new Date(),
+    wordsWritten: 0,
+    keystrokesCount: 0,
+    pausesCount: 0,
+    backspacesCount: 0,
+    averageTypingSpeed: 0
+  }
 };
 
 function editorReducer(state: EditorState, action: EditorAction): EditorState {
@@ -200,6 +273,34 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         showMoreMenu: false, 
         showLinkModal: false 
       };
+    case 'TOGGLE_GEMINI_ASSIST':
+      return { 
+        ...state, 
+        showGeminiAssist: !state.showGeminiAssist,
+        geminiAssistance: {
+          ...state.geminiAssistance,
+          isActive: !state.showGeminiAssist
+        }
+      };
+    case 'TOGGLE_ANALYTICS':
+      return { ...state, showAnalytics: !state.showAnalytics };
+    case 'SET_REFRESHING':
+      return { ...state, refreshing: action.payload };
+    case 'UPDATE_METRICS':
+      return { 
+        ...state, 
+        metrics: { ...state.metrics, ...action.payload } 
+      };
+    case 'UPDATE_GEMINI_SUGGESTION':
+      return {
+        ...state,
+        geminiAssistance: { ...state.geminiAssistance, ...action.payload }
+      };
+    case 'UPDATE_WRITING_ANALYTICS':
+      return {
+        ...state,
+        writingAnalytics: { ...state.writingAnalytics, ...action.payload }
+      };
     default:
       return state;
   }
@@ -225,7 +326,8 @@ export default function EditorScreen() {
     activeStyles, isEditorReady, selectedFolderId, selectedFolderName,
     showFolderSelector, showFontMenu, showColorPicker, showTableModal,
     showMoreMenu, isOnline, isSyncing, showLinkModal, selectedFontSize,
-    linkUrl, linkText, tableRows, tableCols
+    linkUrl, linkText, tableRows, tableCols, refreshing, showGeminiAssist,
+    showAnalytics, metrics, geminiAssistance, writingAnalytics
   } = state;
 
   // OPTIMIZED: Advanced editor functions using dispatch
@@ -722,6 +824,108 @@ export default function EditorScreen() {
     hapticService.light();
   }, []);
 
+  // ENHANCED: Gemini 2.5 Flash Smart Content Assistance
+  const handleGeminiSuggestion = useCallback(async (text: string) => {
+    try {
+      if (text.length < 50) return; // Only trigger for substantial content
+      
+      const aiService = AIService.getInstance();
+      
+      // Use existing generateNoteTitle for basic suggestions
+      const plainText = text.replace(/<[^>]*>/g, '');
+      if (plainText.length > 100) {
+        const suggestion = await aiService.generateNoteTitle(plainText);
+        
+        if (suggestion && suggestion.length > 10) {
+          dispatch({ 
+            type: 'UPDATE_GEMINI_SUGGESTION', 
+            payload: {
+              currentSuggestion: suggestion,
+              suggestionType: 'completion',
+              confidence: 0.8,
+              isActive: true
+            }
+          });
+          
+          // Update metrics
+          dispatch({
+            type: 'UPDATE_METRICS',
+            payload: { geminiSuggestionsUsed: state.metrics.geminiSuggestionsUsed + 1 }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Gemini suggestion error:', error);
+    }
+  }, [state.metrics.geminiSuggestionsUsed]);
+
+  const acceptGeminiSuggestion = useCallback(() => {
+    if (state.geminiAssistance.currentSuggestion && richText.current) {
+      const currentContent = state.currentContent;
+      const newContent = currentContent + state.geminiAssistance.currentSuggestion;
+      
+      richText.current.setContentHTML(newContent);
+      dispatch({ type: 'SET_CURRENT_CONTENT', payload: newContent });
+      dispatch({ 
+        type: 'UPDATE_GEMINI_SUGGESTION', 
+        payload: { currentSuggestion: '', isActive: false }
+      });
+      
+      // Update acceptance rate
+      const currentRate = state.metrics.aiAssistanceAcceptanceRate;
+      const newRate = (currentRate + 1) / 2; // Simple moving average
+      dispatch({
+        type: 'UPDATE_METRICS',
+        payload: { aiAssistanceAcceptanceRate: newRate }
+      });
+      
+      hapticService.success();
+    }
+  }, [state.geminiAssistance.currentSuggestion, state.currentContent, state.metrics.aiAssistanceAcceptanceRate]);
+
+  // ENHANCED: Analytics tracking functions
+  const updateWritingAnalytics = useCallback((content: string) => {
+    const wordCount = content.replace(/<[^>]*>/g, '').split(/\s+/).filter(word => word.length > 0).length;
+    const now = new Date();
+    const sessionDuration = (now.getTime() - state.writingAnalytics.sessionStartTime.getTime()) / 60000; // minutes
+    
+    dispatch({
+      type: 'UPDATE_WRITING_ANALYTICS',
+      payload: {
+        wordsWritten: wordCount,
+        keystrokesCount: state.writingAnalytics.keystrokesCount + 1,
+        averageTypingSpeed: sessionDuration > 0 ? wordCount / sessionDuration : 0
+      }
+    });
+  }, [state.writingAnalytics.sessionStartTime, state.writingAnalytics.keystrokesCount]);
+
+  // ENHANCED: Pull-to-refresh functionality
+  const onRefresh = useCallback(async () => {
+    dispatch({ type: 'SET_REFRESHING', payload: true });
+    
+    try {
+      // Refresh analytics and suggestions
+      await Promise.all([
+        handleGeminiSuggestion(state.currentContent),
+        // Update session metrics
+        new Promise(resolve => {
+          dispatch({
+            type: 'UPDATE_METRICS',
+            payload: { totalEditorSessions: state.metrics.totalEditorSessions + 1 }
+          });
+          resolve(true);
+        })
+      ]);
+      
+      hapticService.success();
+    } catch (error) {
+      console.error('Refresh error:', error);
+      hapticService.error();
+    } finally {
+      dispatch({ type: 'SET_REFRESHING', payload: false });
+    }
+  }, [state.currentContent, state.metrics.totalEditorSessions, handleGeminiSuggestion]);
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -823,7 +1027,135 @@ export default function EditorScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scrollContainer}>
+      {/* ENHANCED: Gemini Assistance Panel */}
+      {showGeminiAssist && (
+        <Surface style={[styles.assistancePanel, { backgroundColor: theme.colors.primaryContainer }]} elevation={2}>
+          <View style={styles.assistanceHeader}>
+            <View style={styles.assistanceTitle}>
+              <IconButton 
+                icon="sparkles" 
+                size={20} 
+                iconColor={theme.colors.primary}
+                style={{ margin: 0 }}
+              />
+              <Text variant="titleSmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                Gemini Assistance
+              </Text>
+            </View>
+            <IconButton
+              icon="close"
+              size={20}
+              iconColor={theme.colors.onPrimaryContainer}
+              onPress={() => dispatch({ type: 'TOGGLE_GEMINI_ASSIST' })}
+              style={{ margin: 0 }}
+            />
+          </View>
+          {geminiAssistance.isActive && geminiAssistance.currentSuggestion ? (
+            <View style={styles.suggestionContent}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer, marginBottom: 8 }}>
+                {geminiAssistance.currentSuggestion}
+              </Text>
+              <View style={styles.suggestionActions}>
+                <Button 
+                  mode="contained-tonal" 
+                  compact 
+                  onPress={acceptGeminiSuggestion}
+                  icon="check"
+                >
+                  Accept
+                </Button>
+                <Button 
+                  mode="text" 
+                  compact 
+                  onPress={() => dispatch({ 
+                    type: 'UPDATE_GEMINI_SUGGESTION', 
+                    payload: { currentSuggestion: '', isActive: false }
+                  })}
+                >
+                  Dismiss
+                </Button>
+              </View>
+            </View>
+          ) : (
+            <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, opacity: 0.7 }}>
+              Continue writing to receive smart suggestions...
+            </Text>
+          )}
+        </Surface>
+      )}
+
+      {/* ENHANCED: Analytics Panel */}
+      {showAnalytics && (
+        <Surface style={[styles.analyticsPanel, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
+          <View style={styles.analyticsHeader}>
+            <View style={styles.analyticsTitle}>
+              <IconButton 
+                icon="chart-line" 
+                size={20} 
+                iconColor={theme.colors.secondary}
+                style={{ margin: 0 }}
+              />
+              <Text variant="titleSmall" style={{ color: theme.colors.onSecondaryContainer }}>
+                Writing Analytics
+              </Text>
+            </View>
+            <IconButton
+              icon="close"
+              size={20}
+              iconColor={theme.colors.onSecondaryContainer}
+              onPress={() => dispatch({ type: 'TOGGLE_ANALYTICS' })}
+              style={{ margin: 0 }}
+            />
+          </View>
+          <View style={styles.analyticsGrid}>
+            <View style={styles.analyticsStat}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.7 }}>
+                Session Words
+              </Text>
+              <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer }}>
+                {writingAnalytics.wordsWritten}
+              </Text>
+            </View>
+            <View style={styles.analyticsStat}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.7 }}>
+                Typing Speed
+              </Text>
+              <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer }}>
+                {Math.round(writingAnalytics.averageTypingSpeed)} WPM
+              </Text>
+            </View>
+            <View style={styles.analyticsStat}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.7 }}>
+                AI Suggestions
+              </Text>
+              <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer }}>
+                {metrics.geminiSuggestionsUsed}
+              </Text>
+            </View>
+            <View style={styles.analyticsStat}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.7 }}>
+                Acceptance Rate
+              </Text>
+              <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer }}>
+                {Math.round(metrics.aiAssistanceAcceptanceRate * 100)}%
+              </Text>
+            </View>
+          </View>
+        </Surface>
+      )}
+
+      <ScrollView 
+        style={styles.scrollContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+            title="Refreshing Gemini Assistance..."
+          />
+        }
+      >
         <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
           <Card.Content style={styles.cardContent}>
             <RichEditor
@@ -854,6 +1186,18 @@ export default function EditorScreen() {
                 const textContent = content.replace(/<[^>]*>/g, '');
                 const words = textContent.trim().split(/\s+/).filter(word => word.length > 0);
                 dispatch({ type: 'SET_WORD_COUNT', payload: words.length });
+                
+                // ENHANCED: Update writing analytics
+                updateWritingAnalytics(content);
+                
+                // ENHANCED: Trigger Gemini suggestions for substantial content
+                if (geminiAssistance.isActive && textContent.length > 100) {
+                  const debounceTimer = setTimeout(() => {
+                    handleGeminiSuggestion(textContent);
+                  }, 2000); // 2 second debounce
+                  
+                  return () => clearTimeout(debounceTimer);
+                }
                 
                 // Note: Auto-save is now handled by the useAdaptiveAutoSave hook
                 // The hook automatically triggers saves based on user patterns and content changes
@@ -1243,6 +1587,32 @@ export default function EditorScreen() {
           
           <Divider style={styles.toolbarDivider} />
           
+          {/* ENHANCED: Gemini Assistance & Analytics Controls */}
+          <View style={styles.toolbarGroup}>
+            <IconButton
+              icon="sparkles"
+              size={20}
+              iconColor={showGeminiAssist ? theme.colors.primary : theme.colors.onSurface}
+              onPress={() => dispatch({ type: 'TOGGLE_GEMINI_ASSIST' })}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: showGeminiAssist ? theme.colors.primaryContainer : 'transparent' }
+              ]}
+            />
+            <IconButton
+              icon="chart-line"
+              size={20}
+              iconColor={showAnalytics ? theme.colors.secondary : theme.colors.onSurface}
+              onPress={() => dispatch({ type: 'TOGGLE_ANALYTICS' })}
+              style={[
+                styles.toolbarButton,
+                { backgroundColor: showAnalytics ? theme.colors.secondaryContainer : 'transparent' }
+              ]}
+            />
+          </View>
+          
+          <Divider style={styles.toolbarDivider} />
+          
           <View style={styles.toolbarGroup}>
             <IconButton
               icon={showVoiceInput ? "microphone" : "microphone-outline"}
@@ -1610,5 +1980,60 @@ const styles = StyleSheet.create({
   },
   folderChip: {
     alignSelf: 'flex-start',
+  },
+  // ENHANCED: Gemini Assistance Panel Styles
+  assistancePanel: {
+    margin: 8,
+    marginBottom: 0,
+    padding: 12,
+    borderRadius: 8,
+  },
+  assistanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  assistanceTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  suggestionContent: {
+    paddingVertical: 8,
+  },
+  suggestionActions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  // ENHANCED: Analytics Panel Styles
+  analyticsPanel: {
+    margin: 8,
+    marginTop: 0,
+    marginBottom: 0,
+    padding: 12,
+    borderRadius: 8,
+  },
+  analyticsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  analyticsTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analyticsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  analyticsStat: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 8,
   },
 });
