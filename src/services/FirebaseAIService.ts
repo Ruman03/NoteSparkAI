@@ -312,6 +312,7 @@ class FirebaseAIService {
 
   // Transform text to notes (replaces current AIService method)
   async transformTextToNote(request: AITransformationRequest): Promise<AITransformationResponse> {
+    const processingStartTime = Date.now();
     try {
       const prompt = this.buildTonePrompt(request.tone, request.text);
       
@@ -329,11 +330,14 @@ class FirebaseAIService {
       // Generate title and count words
       const title = await this.generateNoteTitle(transformedText);
       const wordCount = this.countWords(transformedText);
+      const processingEndTime = Date.now();
 
       return {
         transformedText: this.cleanupAIResponse(transformedText),
         title,
-        wordCount
+        wordCount,
+        processingTime: processingEndTime - processingStartTime,
+        source: 'firebase-ai' as const
       };
     } catch (error) {
       console.error('FirebaseAIService: Error in transformTextToNote:', error);
@@ -344,6 +348,7 @@ class FirebaseAIService {
 
   // Process documents with multimodal capabilities
   async processDocumentWithFirebaseAI(request: DocumentProcessingRequest): Promise<DocumentProcessingResponse> {
+    const processingStartTime = Date.now();
     try {
       console.log(`FirebaseAIService: Processing document with Vertex AI Gemini (${request.mimeType})`);
 
@@ -379,12 +384,15 @@ class FirebaseAIService {
       }
 
       const title = await this.generateNoteTitle(extractedContent);
+      const processingEndTime = Date.now();
 
       console.log('FirebaseAIService: Document processed successfully via Vertex AI');
 
       return {
         extractedContent: this.cleanupAIResponse(extractedContent),
-        title
+        title,
+        processingTime: processingEndTime - processingStartTime,
+        source: 'firebase-ai' as const
       };
     } catch (error) {
       console.error('FirebaseAIService: Document processing error:', error);
@@ -441,14 +449,18 @@ class FirebaseAIService {
 
   // Extract text from image (GeminiVisionService replacement)
   async extractTextFromImage(imageUri: string, options: GeminiVisionOptions = {}): Promise<GeminiVisionResult> {
+    const processingStartTime = Date.now();
     try {
       const prompt = this.buildExtractionPrompt(options);
       const extractedText = await this.analyzeImage(imageUri, prompt);
+      const processingEndTime = Date.now();
       
       return {
         text: extractedText,
         confidence: 0.95, // Firebase AI typically has high confidence
-        sections: this.parseExtractedText(extractedText)
+        sections: this.parseExtractedText(extractedText),
+        processingTime: processingEndTime - processingStartTime,
+        source: 'firebase-ai' as const
       };
     } catch (error) {
       console.error('FirebaseAIService: Text extraction error:', error);
@@ -526,10 +538,10 @@ class FirebaseAIService {
       const response = result.response;
       const title = response.text()?.trim() || '';
       
-      return title || this.generateFallbackDocumentTitle(content, documentType);
+      return title || this.generateDocumentTitle(content, documentType);
     } catch (error) {
       console.warn('FirebaseAIService: Document title generation failed, using fallback:', error);
-      return this.generateFallbackDocumentTitle(content, documentType);
+      return this.generateDocumentTitle(content, documentType);
     }
   }
 
