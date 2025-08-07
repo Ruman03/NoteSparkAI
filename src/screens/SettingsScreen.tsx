@@ -45,8 +45,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
@@ -167,10 +165,9 @@ const SettingsScreen: React.FC = () => {
     deviceSecurityScore: 92,
   });
 
-  // Animation values for smooth transitions
+  // FIXED: Simplified animation values - remove problematic reanimated animations
   const cardScale = useSharedValue(1);
   const insightsOpacity = useSharedValue(0);
-  const tabAnimation = useSharedValue(0);
 
   // ENHANCED: AI-powered analytics and insights generation
   const generateAIInsights = useCallback(async () => {
@@ -217,7 +214,6 @@ const SettingsScreen: React.FC = () => {
       };
       
       setAIInsights(insights);
-      insightsOpacity.value = withSpring(1, { damping: 15 });
       setSnackbarMessage('✨ AI insights generated successfully!');
       setShowSnackbar(true);
       hapticService.success();
@@ -358,7 +354,7 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  // ENHANCED: Preference updates with comprehensive analytics and AI insights
+  // FIXED: Simplified preference updates without problematic animations
   const handlePreferenceUpdate = useCallback(async <K extends keyof typeof preferences>(
     key: K,
     value: typeof preferences[K]
@@ -368,11 +364,6 @@ const SettingsScreen: React.FC = () => {
       await updatePreference(key, value);
       trackSettingsUsage('preference_changed', key);
       
-      // Animation feedback
-      cardScale.value = withSpring(0.98, { damping: 10 }, () => {
-        cardScale.value = withSpring(1);
-      });
-      
       setSnackbarMessage(`✅ Updated ${key} setting`);
       setShowSnackbar(true);
       hapticService.success();
@@ -380,7 +371,7 @@ const SettingsScreen: React.FC = () => {
       console.error('Failed to update preference:', error);
       hapticService.error();
     }
-  }, [updatePreference, trackSettingsUsage, cardScale]);
+  }, [updatePreference, trackSettingsUsage]);
 
   // ENHANCED: Security settings management
   const handleSecurityUpdate = useCallback(async <K extends keyof SecuritySettings>(
@@ -578,18 +569,11 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
     });
   }, []);
 
-  // ENHANCED: Tab navigation with animation
+  // FIXED: Simplified tab navigation without problematic animations
   const handleTabChange = useCallback((tab: typeof activeTab) => {
     hapticService.light();
     setActiveTab(tab);
-    
-    // Animate tab transition
-    tabAnimation.value = withTiming(0, { duration: 150 }, () => {
-      runOnJS(() => {
-        tabAnimation.value = withTiming(1, { duration: 150 });
-      })();
-    });
-  }, [tabAnimation]);
+  }, []);
 
   if (settingsLoading) {
     return (
@@ -752,11 +736,7 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
                 </Button>
               </Card.Content>
             </Card>
-          </>
-        )}
 
-        {activeTab === 'general' && (
-          <>
             {/* ENHANCED: Subscription Section with Analytics */}
             <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
               <Card.Content>
@@ -1199,179 +1179,7 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
           </>
         )}
 
-        {/* Common Footer Sections - Always visible regardless of tab */}
-        <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <View style={styles.subscriptionHeader}>
-              <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-                Subscription
-              </Text>
-              <Chip 
-                icon="crown" 
-                mode="flat"
-                style={[
-                  styles.planBadge, 
-                  { 
-                    backgroundColor: subscription.plan === 'free' 
-                      ? theme.colors.surfaceVariant 
-                      : theme.colors.primaryContainer 
-                  }
-                ]}
-                textStyle={{ 
-                  color: subscription.plan === 'free' 
-                    ? theme.colors.onSurfaceVariant 
-                    : theme.colors.onPrimaryContainer,
-                  fontWeight: 'bold'
-                }}
-              >
-                {subscription.plan.toUpperCase()}
-              </Chip>
-            </View>
-            
-            {subscription.plan === 'free' && (
-              <>
-                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}>
-                  Upgrade to unlock advanced features and unlimited notes
-                </Text>
-                <View style={styles.upgradeButtons}>
-                  <Button 
-                    mode="contained" 
-                    onPress={() => handleUpgrade('pro')}
-                    style={styles.upgradeButton}
-                    icon="crown"
-                  >
-                    Upgrade to Pro
-                  </Button>
-                  <Button 
-                    mode="outlined" 
-                    onPress={() => handleUpgrade('premium')}
-                    style={styles.upgradeButton}
-                  >
-                    Go Premium
-                  </Button>
-                </View>
-              </>
-            )}
-            
-            {subscription.plan !== 'free' && (
-              <List.Item
-                title={`${subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan Active`}
-                description="Thank you for supporting NoteSpark AI!"
-                left={() => <List.Icon icon="crown" color={theme.colors.primary} />}
-                right={() => <List.Icon icon="check-circle" color={theme.colors.primary} />}
-              />
-            )}
-          </Card.Content>
-        </Card>
-
-        {/* Preferences Section */}
-        <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-              App Preferences
-            </Text>
-            
-            {/* Enhanced Image Processing */}
-            <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-              Image Processing
-            </List.Subheader>
-            <Card style={styles.preferenceCard}>
-              <List.Item
-                title="Enhanced Image Processing"
-                description="Advanced AI-powered text recognition with table detection, handwriting support, and document structure analysis"
-                left={(props) => <List.Icon {...props} icon="image-outline" />}
-                right={() => (
-                  <Switch
-                    value={preferences.enhancedImageProcessing}
-                    onValueChange={(value) => handlePreferenceUpdate('enhancedImageProcessing', value)}
-                    disabled={subscription.plan === 'free'}
-                  />
-                )}
-              />
-            </Card>
-            {subscription.plan === 'free' && (
-              <Text variant="bodySmall" style={[styles.proFeatureNote, { color: theme.colors.error }]}>
-                Enhanced processing requires Pro subscription. Free tier includes basic text recognition.
-              </Text>
-            )}
-
-            {/* Default Tone */}
-            <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-              Default Note Tone
-            </List.Subheader>
-            <SegmentedButtons
-              value={preferences.defaultTone}
-              onValueChange={(value) => handlePreferenceUpdate('defaultTone', value as 'professional' | 'casual' | 'simplified')}
-              buttons={[
-                { value: 'professional', label: 'Professional' },
-                { value: 'casual', label: 'Casual' },
-                { value: 'simplified', label: 'Simplified' },
-              ]}
-              style={styles.segmentedButtons}
-            />
-
-            {/* Auto-save */}
-            <List.Item
-              title="Auto-save"
-              description={`Automatically save notes every ${preferences.autoSaveInterval} seconds`}
-              left={() => <List.Icon icon="content-save-auto" color={theme.colors.primary} />}
-              right={() => (
-                <Switch
-                  value={preferences.autoSave}
-                  onValueChange={(value) => handlePreferenceUpdate('autoSave', value)}
-                />
-              )}
-            />
-
-            {/* Auto-save Interval */}
-            {preferences.autoSave && (
-              <>
-                <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-                  Auto-save Interval
-                </List.Subheader>
-                <SegmentedButtons
-                  value={preferences.autoSaveInterval.toString()}
-                  onValueChange={(value) => handlePreferenceUpdate('autoSaveInterval', parseInt(value))}
-                  buttons={[
-                    { value: '1', label: '1s' },
-                    { value: '3', label: '3s' },
-                    { value: '5', label: '5s' },
-                    { value: '10', label: '10s' },
-                  ]}
-                  style={styles.segmentedButtons}
-                />
-              </>
-            )}
-
-            {/* Haptics */}
-            <List.Item
-              title="Haptic Feedback"
-              description="Vibration feedback for app interactions"
-              left={() => <List.Icon icon="vibrate" color={theme.colors.primary} />}
-              right={() => (
-                <Switch
-                  value={preferences.haptics}
-                  onValueChange={(value) => handlePreferenceUpdate('haptics', value)}
-                />
-              )}
-            />
-
-            {/* Notifications */}
-            <List.Item
-              title="Notifications"
-              description="Receive app notifications and updates"
-              left={() => <List.Icon icon="bell" color={theme.colors.primary} />}
-              right={() => (
-                <Switch
-                  value={preferences.notificationsEnabled}
-                  onValueChange={(value) => handlePreferenceUpdate('notificationsEnabled', value)}
-                />
-              )}
-            />
-          </Card.Content>
-        </Card>
-
-        {/* Help & Support Section */}
+        {/* Help & Support Section - Always visible */}
         <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
           <Card.Content>
             <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
@@ -1393,20 +1201,10 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
               right={() => <List.Icon icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
               onPress={handleRateApp}
             />
-            
-            <Divider style={styles.divider} />
-            
-            <List.Item
-              title="Reset Preferences"
-              description="Reset all settings to default values"
-              left={() => <List.Icon icon="restore" color={theme.colors.error} />}
-              right={() => <List.Icon icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
-              onPress={() => setShowResetModal(true)}
-            />
           </Card.Content>
         </Card>
 
-        {/* App Information */}
+        {/* App Information - Always visible */}
         <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
           <Card.Content>
             <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
@@ -1437,7 +1235,7 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
           </Card.Content>
         </Card>
 
-        {/* Sign Out Button */}
+        {/* Sign Out Button - Always visible */}
         <Button
           mode="outlined"
           onPress={handleSignOut}
