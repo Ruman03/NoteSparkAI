@@ -214,7 +214,7 @@ const SettingsScreen: React.FC = () => {
       };
       
       setAIInsights(insights);
-      setSnackbarMessage('✨ AI insights generated successfully!');
+      setSnackbarMessage('AI insights generated successfully!');
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -263,7 +263,7 @@ const SettingsScreen: React.FC = () => {
       }
       
       trackSettingsUsage('ai_recommendation_accepted', recommendation.setting);
-      setSnackbarMessage(`✅ Applied: ${recommendation.recommendation}`);
+      setSnackbarMessage(`Applied: ${recommendation.recommendation}`);
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -342,7 +342,7 @@ const SettingsScreen: React.FC = () => {
       
       setEditingDisplayName(false);
       trackSettingsUsage('profile_updated');
-      setSnackbarMessage('✅ Display name updated successfully!');
+      setSnackbarMessage('Display name updated successfully!');
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -364,7 +364,7 @@ const SettingsScreen: React.FC = () => {
       await updatePreference(key, value);
       trackSettingsUsage('preference_changed', key);
       
-      setSnackbarMessage(`✅ Updated ${key} setting`);
+      setSnackbarMessage(`Updated ${key} setting`);
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -388,7 +388,7 @@ const SettingsScreen: React.FC = () => {
         console.log(`${key} updated to:`, value);
       }
       
-      setSnackbarMessage(`✅ Security setting updated`);
+      setSnackbarMessage(`Security setting updated`);
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -403,7 +403,7 @@ const SettingsScreen: React.FC = () => {
       hapticService.medium();
       await upgradeSubscription(plan);
       trackSettingsUsage('subscription_interaction');
-      setSnackbarMessage(`🎉 Upgraded to ${plan.toUpperCase()}!`);
+      setSnackbarMessage(`Upgraded to ${plan.toUpperCase()}!`);
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -425,7 +425,7 @@ const SettingsScreen: React.FC = () => {
       setShowResetModal(false);
       trackSettingsUsage('preferences_reset');
       
-      setSnackbarMessage('✅ All preferences reset to defaults');
+      setSnackbarMessage('All preferences reset to defaults');
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
@@ -458,12 +458,12 @@ const SettingsScreen: React.FC = () => {
         title: 'NoteSpark AI Data Export',
       });
       
-      setSnackbarMessage('📤 Data exported successfully');
+      setSnackbarMessage('Data exported successfully');
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
       console.error('Data export failed:', error);
-      setSnackbarMessage('❌ Failed to export data');
+      setSnackbarMessage('Failed to export data');
       setShowSnackbar(true);
       hapticService.error();
     }
@@ -547,7 +547,7 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
             text: 'Copy Email', 
             onPress: () => {
               // TODO: Copy to clipboard
-              setSnackbarMessage('📧 Email copied to clipboard');
+              setSnackbarMessage('Email copied to clipboard');
               setShowSnackbar(true);
             } 
           },
@@ -794,7 +794,7 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
                 {subscription.plan !== 'free' && (
                   <List.Item
                     title={`${subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan Active`}
-                    description="Thank you for supporting NoteSpark AI! 🎉"
+                    description="Thank you for supporting NoteSpark AI!"
                     left={() => <List.Icon icon="crown" color={theme.colors.primary} />}
                     right={() => <List.Icon icon="check-circle" color={theme.colors.primary} />}
                   />

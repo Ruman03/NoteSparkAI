@@ -995,12 +995,12 @@ const ScannerScreen: React.FC = () => {
         title: 'NoteSpark AI Scanner Analytics Export',
       });
       
-      setSnackbarMessage('📤 Scanner data exported successfully');
+      setSnackbarMessage('Scanner data exported successfully');
       setShowSnackbar(true);
       hapticService.success();
     } catch (error) {
       console.error('Data export failed:', error);
-      setSnackbarMessage('❌ Failed to export scanner data');
+      setSnackbarMessage('Failed to export scanner data');
       setShowSnackbar(true);
       hapticService.error();
     }

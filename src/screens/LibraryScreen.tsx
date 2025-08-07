@@ -42,6 +42,7 @@ import {
 } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import type { LibraryScreenNavigationProp } from '../types/navigation';
 import { NotesService } from '../services/NotesService';
@@ -642,7 +643,7 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
         <View style={styles.headerContent}>
           <View style={styles.titleRow}>
             <Text variant="headlineSmall" style={styles.title}>
-              📚 Library
+              Library
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {/* ENHANCED: Insights Access Button */}
@@ -809,7 +810,7 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
             <Text variant="titleLarge" style={{ flex: 1, fontWeight: '600' }}>
-              🧠 Smart Library Insights
+              Smart Library Insights
             </Text>
             <IconButton
               icon="close"
@@ -823,7 +824,7 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
             <Card style={{ marginBottom: 16, backgroundColor: theme.colors.surfaceVariant }}>
               <Card.Content style={{ padding: 16 }}>
                 <Text variant="titleMedium" style={{ marginBottom: 8, fontWeight: '600' }}>
-                  📊 Usage Analytics
+                  Usage Analytics
                 </Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text variant="bodyMedium">Total Actions:</Text>
@@ -844,10 +845,15 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
               <Card key={index} style={{ marginBottom: 12, backgroundColor: theme.colors.surface }}>
                 <Card.Content style={{ padding: 16 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                    <Text style={{ fontSize: 20, marginRight: 8 }}>
-                      {suggestion.type === 'organization' ? '📁' : 
-                       suggestion.type === 'productivity' ? '⚡' : '🎯'}
-                    </Text>
+                    <Icon 
+                      name={
+                        suggestion.type === 'organization' ? 'folder' : 
+                        suggestion.type === 'productivity' ? 'lightning-bolt' : 'target'
+                      } 
+                      size={20} 
+                      color={theme.colors.primary}
+                      style={{ marginRight: 8 }}
+                    />
                     <Text variant="titleMedium" style={{ fontWeight: '600', flex: 1 }}>
                       {suggestion.title}
                     </Text>
@@ -903,7 +909,7 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <Text variant="titleLarge" style={{ flex: 1, fontWeight: '600' }}>
-                📈 Library Metrics
+                Library Metrics
               </Text>
               <IconButton
                 icon="close"
@@ -916,7 +922,7 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
             <Card style={{ marginBottom: 16, backgroundColor: theme.colors.surfaceVariant }}>
               <Card.Content style={{ padding: 16 }}>
                 <Text variant="titleMedium" style={{ marginBottom: 12, fontWeight: '600' }}>
-                  📚 Content Overview
+                  Content Overview
                 </Text>
                 <View style={{ marginBottom: 12 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>

@@ -538,7 +538,7 @@ export class ImageQualityService {
       suggestions.push('☀️ Avoid shadows on the document');
     }
     if (lighting.glare) {
-      suggestions.push('✨ Reduce glare by changing angle');
+      suggestions.push('Reduce glare by changing angle');
     }
     if (lighting.contrast < 0.6) {
       suggestions.push('🔆 Increase contrast for better text clarity');

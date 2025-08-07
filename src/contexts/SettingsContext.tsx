@@ -155,7 +155,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       
       Alert.alert(
         'Upgrade Successful!', 
-        `Welcome to NoteSpark AI ${plan.charAt(0).toUpperCase() + plan.slice(1)}! 🎉\n\nYour new features are now available.`
+        `Welcome to NoteSpark AI ${plan.charAt(0).toUpperCase() + plan.slice(1)}!\n\nYour new features are now available.`
       );
       
       console.log(`Subscription upgraded to ${plan}`);

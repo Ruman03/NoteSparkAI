@@ -500,6 +500,445 @@ export default function DocumentPreviewScreen() {
     return optimized;
   }, []);
 
+  // Create styles with theme access for proper dark mode support
+  const styles = useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    
+    // Loading States
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    loadingTitle: {
+      marginTop: 16,
+      textAlign: 'center',
+      color: theme.colors.onSurface, // FIXED: Dynamic color for dark mode
+    },
+    loadingCaption: {
+      marginTop: 8,
+      textAlign: 'center',
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Better contrast in dark mode
+    },
+    progressBar: {
+      marginTop: 24,
+      width: screenWidth * 0.8,
+      height: 6,
+      borderRadius: 3,
+    },
+    
+    // Error States
+    errorContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    errorTitle: {
+      marginTop: 16,
+      textAlign: 'center',
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    errorCaption: {
+      marginTop: 8,
+      textAlign: 'center',
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Better contrast
+    },
+    errorButton: {
+      marginTop: 24,
+    },
+    
+    // View Mode
+    viewModeContainer: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: theme.colors.surface, // FIXED: Proper surface color
+    },
+    segmentedButtons: {
+      marginHorizontal: 0,
+    },
+    
+    // Content Layout
+    contentContainer: {
+      flex: 1,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 100, // Space for FAB
+    },
+    
+    // Quality Banner
+    qualityBanner: {
+      marginBottom: 16,
+      borderRadius: 12,
+    },
+    
+    // Header Card
+    headerCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode visibility
+      borderColor: theme.colors.outline,
+    },
+    headerContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    headerText: {
+      flex: 1,
+      marginLeft: 16,
+    },
+    documentTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+      lineHeight: 24,
+      color: theme.colors.onSurface, // FIXED: Dynamic text color
+    },
+    documentSubtitle: {
+      marginTop: 4,
+      fontSize: 14,
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Better contrast
+    },
+    qualityIndicator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    qualityText: {
+      fontSize: 12,
+      marginLeft: 4,
+      fontWeight: '500',
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    
+    // Stats Card
+    statsCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode
+      borderColor: theme.colors.outline,
+    },
+    statsGrid: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+    },
+    statItem: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    statLabel: {
+      fontSize: 12,
+      marginTop: 4,
+      opacity: 0.7,
+      textAlign: 'center',
+      color: theme.colors.onSurfaceVariant, // FIXED: Better contrast
+    },
+    statValue: {
+      fontSize: 16,
+      fontWeight: '600',
+      marginTop: 2,
+      textAlign: 'center',
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    
+    // Content Card
+    contentCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode
+      borderColor: theme.colors.outline,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 12,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    previewContent: {
+      marginTop: 12,
+    },
+    previewText: {
+      fontSize: 14,
+      lineHeight: 20,
+      opacity: 0.9, // FIXED: Better opacity for dark mode
+      color: theme.colors.onSurface, // FIXED: Dynamic text color
+    },
+    expandButton: {
+      marginTop: 12,
+      alignSelf: 'flex-start',
+    },
+    
+    // Topics Card
+    topicsCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode
+      borderColor: theme.colors.outline,
+    },
+    chipsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginTop: 8,
+      gap: 8,
+    },
+    topicChip: {
+      marginBottom: 8,
+      backgroundColor: theme.dark ? theme.colors.surfaceVariant : undefined, // FIXED: Better chip visibility
+    },
+    chipText: {
+      fontSize: 12,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic chip text color
+    },
+    
+    // Analysis Card
+    analysisCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode
+      borderColor: theme.colors.outline,
+    },
+    analysisSection: {
+      marginBottom: 20,
+    },
+    analysisSubtitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      marginBottom: 8,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    analysisText: {
+      fontSize: 14,
+      lineHeight: 20,
+      opacity: 0.9, // FIXED: Better opacity for dark mode
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    keyPointItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 8,
+    },
+    bulletPoint: {
+      marginRight: 8,
+      marginTop: 6,
+    },
+    keyPointText: {
+      flex: 1,
+      fontSize: 14,
+      lineHeight: 20,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    studyInfoGrid: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      marginVertical: 16,
+      paddingVertical: 16,
+      backgroundColor: theme.dark ? theme.colors.surfaceVariant : 'rgba(0,0,0,0.02)', // FIXED: Better background for dark mode
+      borderRadius: 12,
+    },
+    studyInfoItem: {
+      alignItems: 'center',
+    },
+    studyInfoLabel: {
+      fontSize: 12,
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    studyInfoValue: {
+      fontSize: 16,
+      fontWeight: '600',
+      marginTop: 4,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    studyTipItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 12,
+    },
+    studyTipText: {
+      flex: 1,
+      fontSize: 14,
+      lineHeight: 20,
+      marginLeft: 8,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    
+    // Insights Card
+    insightsCard: {
+      marginBottom: 16,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.surface, // FIXED: Proper card background
+      borderWidth: theme.dark ? 1 : 0, // FIXED: Border for dark mode
+      borderColor: theme.colors.outline,
+    },
+    insightSection: {
+      marginBottom: 24,
+    },
+    insightSubtitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      marginBottom: 12,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    scoreContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    scoreBar: {
+      flex: 1,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 12,
+    },
+    scoreText: {
+      fontSize: 14,
+      fontWeight: '600',
+      minWidth: 40,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    sentimentContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+    },
+    sentimentItem: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    sentimentLabel: {
+      fontSize: 12,
+      marginTop: 4,
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    sentimentValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      marginTop: 2,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    entityGroup: {
+      marginBottom: 16,
+    },
+    entityLabel: {
+      fontSize: 12,
+      marginBottom: 8,
+      opacity: 0.7,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    entityContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+    },
+    entityChip: {
+      marginBottom: 6,
+      backgroundColor: theme.dark ? theme.colors.surfaceVariant : undefined, // FIXED: Better chip visibility
+    },
+    topicAnalysis: {
+      marginTop: 8,
+    },
+    primaryTopic: {
+      fontSize: 14,
+      fontWeight: '600',
+      marginBottom: 4,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    topicConfidence: {
+      fontSize: 12,
+      opacity: 0.7,
+      marginBottom: 8,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    secondaryTopics: {
+      marginTop: 8,
+    },
+    secondaryTopicsList: {
+      fontSize: 12,
+      marginTop: 4,
+      opacity: 0.8,
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    
+    // FAB
+    fab: {
+      position: 'absolute',
+      margin: 16,
+      right: 0,
+      bottom: 0,
+      borderRadius: 28,
+      elevation: 6,
+    },
+    fabSpacer: {
+      height: 80,
+    },
+    
+    // Processing Dialog
+    processingDialog: {
+      borderRadius: 16,
+      backgroundColor: theme.colors.surface, // FIXED: Proper dialog background
+    },
+    processingSteps: {
+      marginVertical: 8,
+    },
+    processingStep: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    stepName: {
+      flex: 1,
+      fontSize: 14,
+      marginLeft: 12,
+      color: theme.colors.onSurface, // FIXED: Dynamic color
+    },
+    stepProgress: {
+      fontSize: 12,
+      fontWeight: '600',
+      opacity: 0.7,
+      minWidth: 40,
+      textAlign: 'right',
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    processingNote: {
+      marginTop: 16,
+      fontSize: 12,
+      opacity: 0.7,
+      textAlign: 'center',
+      color: theme.colors.onSurfaceVariant, // FIXED: Dynamic color
+    },
+    
+    // Snackbar
+    snackbar: {
+      margin: 16,
+      borderRadius: 12,
+    },
+  }), [theme]); // Re-create styles when theme changes
+
   // Animation functions
   const startFadeInAnimation = useCallback(() => {
     Animated.timing(fadeAnimation, {
@@ -747,9 +1186,9 @@ export default function DocumentPreviewScreen() {
   const addStudyMarkers = useCallback((content: string): string => {
     // Add markers for important study elements
     return content
-      .replace(/\b(important|key|crucial|essential|fundamental)\b/gi, '⭐ $1')
-      .replace(/\b(definition|define)\b/gi, '📝 $1')
-      .replace(/\b(example|for instance)\b/gi, '💡 $1');
+      .replace(/\b(important|key|crucial|essential|fundamental)\b/gi, '★ $1')
+      .replace(/\b(definition|define)\b/gi, '◆ $1')
+      .replace(/\b(example|for instance)\b/gi, '◉ $1');
   }, []);
 
   // Back handler
@@ -1231,391 +1670,3 @@ export default function DocumentPreviewScreen() {
     </SafeAreaView>
   );
 }
-
-// Enhanced StyleSheet with comprehensive Material Design 3 styling
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  
-  // Loading States
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  loadingTitle: {
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  loadingCaption: {
-    marginTop: 8,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  progressBar: {
-    marginTop: 24,
-    width: screenWidth * 0.8,
-    height: 6,
-    borderRadius: 3,
-  },
-  
-  // Error States
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  errorTitle: {
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorCaption: {
-    marginTop: 8,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  errorButton: {
-    marginTop: 24,
-  },
-  
-  // View Mode
-  viewModeContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  segmentedButtons: {
-    marginHorizontal: 0,
-  },
-  
-  // Content Layout
-  contentContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100, // Space for FAB
-  },
-  
-  // Quality Banner
-  qualityBanner: {
-    marginBottom: 16,
-    borderRadius: 12,
-  },
-  
-  // Header Card
-  headerCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerText: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  documentTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    lineHeight: 24,
-  },
-  documentSubtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  qualityIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  qualityText: {
-    fontSize: 12,
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  
-  // Stats Card
-  statsCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 4,
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  
-  // Content Card
-  contentCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  previewContent: {
-    marginTop: 12,
-  },
-  previewText: {
-    fontSize: 14,
-    lineHeight: 20,
-    opacity: 0.8,
-  },
-  expandButton: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-  },
-  
-  // Topics Card
-  topicsCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 8,
-  },
-  topicChip: {
-    marginBottom: 8,
-  },
-  chipText: {
-    fontSize: 12,
-  },
-  
-  // Analysis Card
-  analysisCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  analysisSection: {
-    marginBottom: 20,
-  },
-  analysisSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  analysisText: {
-    fontSize: 14,
-    lineHeight: 20,
-    opacity: 0.8,
-  },
-  keyPointItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  bulletPoint: {
-    marginRight: 8,
-    marginTop: 6,
-  },
-  keyPointText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  studyInfoGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 16,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(0,0,0,0.02)',
-    borderRadius: 12,
-  },
-  studyInfoItem: {
-    alignItems: 'center',
-  },
-  studyInfoLabel: {
-    fontSize: 12,
-    opacity: 0.7,
-  },
-  studyInfoValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  studyTipItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  studyTipText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    marginLeft: 8,
-  },
-  
-  // Insights Card
-  insightsCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  insightSection: {
-    marginBottom: 24,
-  },
-  insightSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  scoreContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  scoreBar: {
-    flex: 1,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 12,
-  },
-  scoreText: {
-    fontSize: 14,
-    fontWeight: '600',
-    minWidth: 40,
-  },
-  sentimentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  sentimentItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  sentimentLabel: {
-    fontSize: 12,
-    marginTop: 4,
-    opacity: 0.7,
-  },
-  sentimentValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  entityGroup: {
-    marginBottom: 16,
-  },
-  entityLabel: {
-    fontSize: 12,
-    marginBottom: 8,
-    opacity: 0.7,
-  },
-  entityContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  entityChip: {
-    marginBottom: 6,
-  },
-  topicAnalysis: {
-    marginTop: 8,
-  },
-  primaryTopic: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  topicConfidence: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginBottom: 8,
-  },
-  secondaryTopics: {
-    marginTop: 8,
-  },
-  secondaryTopicsList: {
-    fontSize: 12,
-    marginTop: 4,
-    opacity: 0.8,
-  },
-  
-  // FAB
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
-    borderRadius: 28,
-    elevation: 6,
-  },
-  fabSpacer: {
-    height: 80,
-  },
-  
-  // Processing Dialog
-  processingDialog: {
-    borderRadius: 16,
-  },
-  processingSteps: {
-    marginVertical: 8,
-  },
-  processingStep: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  stepName: {
-    flex: 1,
-    fontSize: 14,
-    marginLeft: 12,
-  },
-  stepProgress: {
-    fontSize: 12,
-    fontWeight: '600',
-    opacity: 0.7,
-    minWidth: 40,
-    textAlign: 'right',
-  },
-  processingNote: {
-    marginTop: 16,
-    fontSize: 12,
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  
-  // Snackbar
-  snackbar: {
-    margin: 16,
-    borderRadius: 12,
-  },
-});

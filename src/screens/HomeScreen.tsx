@@ -35,7 +35,75 @@ interface HomeScreenMetrics {
 
 const { width } = Dimensions.get('window');
 
-export default function HomeScreen() {
+// Memoized stat card component for better performance
+const StatCard = React.memo(({ 
+  value, 
+  label, 
+  subtitle, 
+  backgroundColor, 
+  textColor 
+}: {
+  value: string | number;
+  label: string;
+  subtitle: string;
+  backgroundColor: string;
+  textColor: string;
+}) => (
+  <Surface style={[styles.statCard, { backgroundColor }]} elevation={1}>
+    <Text variant="headlineSmall" style={{ color: textColor, fontWeight: 'bold' }}>
+      {value}
+    </Text>
+    <Text variant="bodySmall" style={{ color: textColor }}>
+      {label}
+    </Text>
+    <Text variant="labelSmall" style={{ color: textColor, opacity: 0.8, marginTop: 4 }}>
+      {subtitle}
+    </Text>
+  </Surface>
+));
+
+// Memoized action card component for better performance
+const ActionCard = React.memo(({ 
+  icon, 
+  title, 
+  subtitle, 
+  onPress, 
+  backgroundColor, 
+  textColor 
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  backgroundColor: string;
+  textColor: string;
+}) => (
+  <Surface style={[styles.actionCard, { backgroundColor }]} elevation={2}>
+    <TouchableOpacity style={styles.actionContent} onPress={onPress}>
+      <Icon 
+        name={icon} 
+        size={48} 
+        color={textColor} 
+        style={styles.actionIcon}
+      />
+      <View style={styles.actionText}>
+        <Text variant="titleMedium" style={{ color: textColor, fontWeight: 'bold' }}>
+          {title}
+        </Text>
+        <Text variant="bodyMedium" style={{ color: textColor, opacity: 0.8 }}>
+          {subtitle}
+        </Text>
+      </View>
+      <Icon 
+        name="chevron-right" 
+        size={24} 
+        color={textColor} 
+      />
+    </TouchableOpacity>
+  </Surface>
+));
+
+function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const theme = useTheme();
   const { user, signOut } = useAuth();
@@ -69,26 +137,26 @@ export default function HomeScreen() {
     const firstName = user?.displayName || user?.email?.split('@')[0] || 'there';
     
     let timeGreeting = '';
-    let emoji = '';
+    let iconName = '';
     
     if (hour < 6) {
       timeGreeting = `Working late, ${firstName}?`;
-      emoji = '🌙';
+      iconName = 'weather-night';
     } else if (hour < 12) {
       timeGreeting = `Good morning, ${firstName}!`;
-      emoji = '🌅';
+      iconName = 'weather-sunset-up';
     } else if (hour < 17) {
       timeGreeting = `Good afternoon, ${firstName}!`;
-      emoji = '☀️';
+      iconName = 'weather-sunny';
     } else if (hour < 22) {
       timeGreeting = `Good evening, ${firstName}!`;
-      emoji = '🌆';
+      iconName = 'weather-sunset-down';
     } else {
       timeGreeting = `Burning the midnight oil, ${firstName}?`;
-      emoji = '🌃';
+      iconName = 'weather-night';
     }
     
-    return { greeting: timeGreeting, emoji };
+    return { greeting: timeGreeting, iconName };
   }, [user]);
 
   const getMotivationalMessage = useCallback(() => {
@@ -359,7 +427,7 @@ export default function HomeScreen() {
     }
   }, [navigation]);
 
-  const renderRecentNote = ({ item }: { item: Note }) => {
+  const renderRecentNote = useCallback(({ item }: { item: Note }) => {
     // Determine note type icon based on source
     const getNoteTypeIcon = (note: Note) => {
       if (note.sourceImageUrl) return 'camera';
@@ -416,7 +484,7 @@ export default function HomeScreen() {
         </Card.Content>
       </Card>
     );
-  };
+  }, [theme.colors, handleNotePress]);
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -480,9 +548,19 @@ export default function HomeScreen() {
           {/* Enhanced Dynamic Header with Greeting */}
           <View style={styles.header}>
             <View style={styles.greetingContainer}>
-              <Text variant="headlineLarge" style={styles.title}>
-                {getGreeting().greeting} {getGreeting().emoji}
-              </Text>
+              <View style={styles.greetingRow}>
+                <View style={styles.titleAndIconContainer}>
+                  <Text variant="headlineLarge" style={[styles.title, { color: theme.colors.onSurface }]}>
+                    {getGreeting().greeting}
+                  </Text>
+                  <Icon 
+                    name={getGreeting().iconName} 
+                    size={32} 
+                    color={theme.colors.primary} 
+                    style={styles.greetingIcon}
+                  />
+                </View>
+              </View>
               <Text variant="bodyLarge" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
                 {getMotivationalMessage()}
               </Text>
@@ -512,44 +590,32 @@ export default function HomeScreen() {
 
           {/* Enhanced Usage Statistics with Advanced Analytics */}
           <View style={styles.statsContainer}>
-            <Surface style={[styles.statCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={1}>
-              <Text variant="headlineSmall" style={{ color: theme.colors.onPrimaryContainer, fontWeight: 'bold' }}>
-                {stats.totalNotes}
-              </Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
-                {stats.totalNotes === 1 ? 'Note Created' : 'Notes Created'}
-              </Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onPrimaryContainer, opacity: 0.8, marginTop: 4 }}>
-                {stats.totalNotes > 0 ? 'Keep it up!' : 'Start your journey!'}
-              </Text>
-            </Surface>
+            <StatCard
+              value={stats.totalNotes}
+              label={stats.totalNotes === 1 ? 'Note Created' : 'Notes Created'}
+              subtitle={stats.totalNotes > 0 ? 'Keep it up!' : 'Start your journey!'}
+              backgroundColor={theme.colors.primaryContainer}
+              textColor={theme.colors.onPrimaryContainer}
+            />
             
-            <Surface style={[styles.statCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={1}>
-              <Text variant="headlineSmall" style={{ color: theme.colors.onSecondaryContainer, fontWeight: 'bold' }}>
-                {stats.totalWords.toLocaleString()}
-              </Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSecondaryContainer }}>
-                Total Words
-              </Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8, marginTop: 4 }}>
-                Avg: {stats.averageNoteLength} per note
-              </Text>
-            </Surface>
+            <StatCard
+              value={stats.totalWords.toLocaleString()}
+              label="Total Words"
+              subtitle={`Avg: ${stats.averageNoteLength} per note`}
+              backgroundColor={theme.colors.secondaryContainer}
+              textColor={theme.colors.onSecondaryContainer}
+            />
           </View>
 
           {/* Enhanced Additional Stats Row */}
           <View style={styles.statsContainer}>
-            <Surface style={[styles.statCard, { backgroundColor: theme.colors.tertiaryContainer }]} elevation={1}>
-              <Text variant="headlineSmall" style={{ color: theme.colors.onTertiaryContainer, fontWeight: 'bold' }}>
-                {stats.notesToday}
-              </Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onTertiaryContainer }}>
-                Notes Today
-              </Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onTertiaryContainer, opacity: 0.8, marginTop: 4 }}>
-                {stats.notesToday > 0 ? 'Productive day!' : 'Ready to start?'}
-              </Text>
-            </Surface>
+            <StatCard
+              value={stats.notesToday}
+              label="Notes Today"
+              subtitle={stats.notesToday > 0 ? 'Productive day!' : 'Ready to start?'}
+              backgroundColor={theme.colors.tertiaryContainer}
+              textColor={theme.colors.onTertiaryContainer}
+            />
             
             <Surface style={[styles.statCard, { backgroundColor: theme.colors.errorContainer }]} elevation={1}>
               <Text variant="headlineSmall" style={{ color: theme.colors.onErrorContainer, fontWeight: 'bold' }}>
@@ -558,9 +624,19 @@ export default function HomeScreen() {
               <Text variant="bodySmall" style={{ color: theme.colors.onErrorContainer }}>
                 Day Streak
               </Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onErrorContainer, opacity: 0.8, marginTop: 4 }}>
-                {stats.streak > 0 ? '🔥 On fire!' : 'Start today!'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                {stats.streak > 0 && (
+                  <Icon 
+                    name="fire" 
+                    size={16} 
+                    color={theme.colors.onErrorContainer} 
+                    style={{ marginRight: 4 }}
+                  />
+                )}
+                <Text variant="labelSmall" style={{ color: theme.colors.onErrorContainer, opacity: 0.8 }}>
+                  {stats.streak > 0 ? 'On fire!' : 'Start today!'}
+                </Text>
+              </View>
             </Surface>
           </View>
 
@@ -575,7 +651,13 @@ export default function HomeScreen() {
                   </Text>
                   <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.8 }}>
                     {stats.lastWeekActivity} notes created this week
-                    {stats.lastWeekActivity > 7 ? ' - Amazing consistency! 🎉' : stats.lastWeekActivity > 3 ? ' - Great progress!' : ' - Keep building momentum!'}
+                    {stats.lastWeekActivity > 7 ? (
+                      <Text> - Amazing consistency! <Icon name="party-popper" size={14} color={theme.colors.primary} /></Text>
+                    ) : stats.lastWeekActivity > 3 ? (
+                      ' - Great progress!'
+                    ) : (
+                      ' - Keep building momentum!'
+                    )}
                   </Text>
                 </View>
               </View>
@@ -618,12 +700,20 @@ export default function HomeScreen() {
                     color={theme.colors.secondary}
                     style={styles.welcomeIcon}
                   />
-                  <Text 
-                    variant="headlineSmall" 
-                    style={[styles.welcomeTitle, { color: theme.colors.onSecondaryContainer }]}
-                  >
-                    Welcome to NoteSpark AI! ✨
-                  </Text>
+                  <View style={styles.welcomeTitleRow}>
+                    <Text 
+                      variant="headlineSmall" 
+                      style={[styles.welcomeTitle, { color: theme.colors.onSecondaryContainer }]}
+                    >
+                      Welcome to NoteSpark AI!
+                    </Text>
+                    <Icon 
+                      name="sparkles" 
+                      size={24} 
+                      color={theme.colors.secondary}
+                      style={styles.welcomeTitleIcon}
+                    />
+                  </View>
                   <Text 
                     variant="bodyLarge" 
                     style={[styles.welcomeSubtitle, { color: theme.colors.onSecondaryContainer, opacity: 0.8 }]}
@@ -657,101 +747,41 @@ export default function HomeScreen() {
               Quick Actions
             </Text>
             
-            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleScanDocument}>
-                <Icon 
-                  name="camera-plus" 
-                  size={48} 
-                  color={theme.colors.onPrimaryContainer} 
-                  style={styles.actionIcon}
-                />
-                <View style={styles.actionText}>
-                  <Text variant="titleMedium" style={{ color: theme.colors.onPrimaryContainer, fontWeight: 'bold' }}>
-                    Scan Document
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer, opacity: 0.8 }}>
-                    Capture and transform documents with AI
-                  </Text>
-                </View>
-                <Icon 
-                  name="chevron-right" 
-                  size={24} 
-                  color={theme.colors.onPrimaryContainer} 
-                />
-              </TouchableOpacity>
-            </Surface>
+            <ActionCard
+              icon="camera-plus"
+              title="Scan Document"
+              subtitle="Capture and transform documents with AI"
+              onPress={handleScanDocument}
+              backgroundColor={theme.colors.primaryContainer}
+              textColor={theme.colors.onPrimaryContainer}
+            />
 
-            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleDocumentUpload}>
-                <Icon 
-                  name="file-upload" 
-                  size={48} 
-                  color={theme.colors.onSecondaryContainer} 
-                  style={styles.actionIcon}
-                />
-                <View style={styles.actionText}>
-                  <Text variant="titleMedium" style={{ color: theme.colors.onSecondaryContainer, fontWeight: 'bold' }}>
-                    Upload Document
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onSecondaryContainer, opacity: 0.8 }}>
-                    Import PDF, Word, or text files
-                  </Text>
-                </View>
-                <Icon 
-                  name="chevron-right" 
-                  size={24} 
-                  color={theme.colors.onSecondaryContainer} 
-                />
-              </TouchableOpacity>
-            </Surface>
+            <ActionCard
+              icon="file-upload"
+              title="Upload Document"
+              subtitle="Import PDF, Word, or text files"
+              onPress={handleDocumentUpload}
+              backgroundColor={theme.colors.secondaryContainer}
+              textColor={theme.colors.onSecondaryContainer}
+            />
 
-            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.tertiaryContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleCreateBlankNote}>
-                <Icon 
-                  name="note-plus" 
-                  size={48} 
-                  color={theme.colors.onTertiaryContainer} 
-                  style={styles.actionIcon}
-                />
-                <View style={styles.actionText}>
-                  <Text variant="titleMedium" style={{ color: theme.colors.onTertiaryContainer, fontWeight: 'bold' }}>
-                    Create Blank Note
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onTertiaryContainer, opacity: 0.8 }}>
-                    Start writing from scratch
-                  </Text>
-                </View>
-                <Icon 
-                  name="chevron-right" 
-                  size={24} 
-                  color={theme.colors.onTertiaryContainer} 
-                />
-              </TouchableOpacity>
-            </Surface>
+            <ActionCard
+              icon="note-plus"
+              title="Create Blank Note"
+              subtitle="Start writing from scratch"
+              onPress={handleCreateBlankNote}
+              backgroundColor={theme.colors.tertiaryContainer}
+              textColor={theme.colors.onTertiaryContainer}
+            />
 
-            <Surface style={[styles.actionCard, { backgroundColor: theme.colors.errorContainer }]} elevation={2}>
-              <TouchableOpacity style={styles.actionContent} onPress={handleViewLibrary}>
-                <Icon 
-                  name="library" 
-                  size={48} 
-                  color={theme.colors.onErrorContainer} 
-                  style={styles.actionIcon}
-                />
-                <View style={styles.actionText}>
-                  <Text variant="titleMedium" style={{ color: theme.colors.onErrorContainer, fontWeight: 'bold' }}>
-                    View Library
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: theme.colors.onErrorContainer, opacity: 0.8 }}>
-                    Browse all your notes and folders
-                  </Text>
-                </View>
-                <Icon 
-                  name="chevron-right" 
-                  size={24} 
-                  color={theme.colors.onErrorContainer} 
-                />
-              </TouchableOpacity>
-            </Surface>
+            <ActionCard
+              icon="library"
+              title="View Library"
+              subtitle="Browse all your notes and folders"
+              onPress={handleViewLibrary}
+              backgroundColor={theme.colors.errorContainer}
+              textColor={theme.colors.onErrorContainer}
+            />
           </View>
 
           <Button 
@@ -820,9 +850,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
+  greetingRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    width: '100%',
+  },
+  titleAndIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    maxWidth: '90%',
+  },
+  titleContainer: {
+    flex: 0,
+    flexShrink: 1,
+    marginRight: 8,
+  },
+  greetingIcon: {
+    marginLeft: 8,
+    flexShrink: 0,
+  },
   title: {
     fontWeight: 'bold',
-    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
@@ -964,10 +1015,18 @@ const styles = StyleSheet.create({
   welcomeIcon: {
     marginBottom: 16,
   },
+  welcomeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  welcomeTitleIcon: {
+    marginLeft: 8,
+  },
   welcomeTitle: {
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 12,
   },
   welcomeSubtitle: {
     textAlign: 'center',
@@ -988,3 +1047,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 });
+
+// Export the memoized component for better performance
+export default React.memo(HomeScreen);

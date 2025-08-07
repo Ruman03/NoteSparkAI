@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -202,10 +202,13 @@ const AuthScreen: React.FC = () => {
   const [biometricPromptVisible, setBiometricPromptVisible] = useState(false);
   const [authMethodSelected, setAuthMethodSelected] = useState<'email' | 'google' | 'apple' | 'biometric'>('email');
   
+  // Debouncing ref for password strength analysis
+  const passwordAnalysisTimeout = useRef<NodeJS.Timeout | null>(null);
+  
   const theme = useTheme();
   const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
 
-  // ENHANCED: Session analytics and performance tracking
+  // ENHANCED: Session analytics and performance tracking with cleanup
   useEffect(() => {
     const startTime = Date.now();
     setAnalytics(prev => ({
@@ -227,7 +230,13 @@ const AuthScreen: React.FC = () => {
       }));
     }, 1000);
 
-    return () => clearInterval(interval);
+    // Cleanup function
+    return () => {
+      clearInterval(interval);
+      if (passwordAnalysisTimeout.current) {
+        clearTimeout(passwordAnalysisTimeout.current);
+      }
+    };
   }, []);
 
   // ENHANCED: Advanced email validation with domain suggestions
@@ -267,69 +276,96 @@ const AuthScreen: React.FC = () => {
     return isValid;
   }, []);
 
-  // ENHANCED: Comprehensive password strength analysis
+  // ENHANCED: Comprehensive password strength analysis with debouncing
   const analyzePasswordStrength = useCallback((passwordValue: string) => {
-    const hasUppercase = /[A-Z]/.test(passwordValue);
-    const hasLowercase = /[a-z]/.test(passwordValue);
-    const hasNumbers = /\d/.test(passwordValue);
-    const hasSymbols = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(passwordValue);
-    const minLength = passwordValue.length >= 8;
-
-    // Common password check (simplified)
-    const commonPasswords = [
-      'password', '123456', 'password123', 'admin', 'qwerty',
-      'letmein', 'welcome', 'monkey', '1234567890', 'password1'
-    ];
-    const commonPassword = commonPasswords.includes(passwordValue.toLowerCase());
-
-    let score = 0;
-    if (minLength) score += 20;
-    if (hasUppercase) score += 20;
-    if (hasLowercase) score += 20;
-    if (hasNumbers) score += 20;
-    if (hasSymbols) score += 20;
-    if (passwordValue.length >= 12) score += 10;
-    if (commonPassword) score -= 50;
-    
-    score = Math.max(0, Math.min(100, score));
-
-    const requirements = {
-      minLength,
-      hasUppercase,
-      hasLowercase,
-      hasNumbers,
-      hasSymbols,
-    };
-
-    const isValid = Object.values(requirements).every(req => req) && !commonPassword;
-    
-    let error: string | undefined;
-    if (passwordValue && !isValid) {
-      if (!minLength) error = 'Password must be at least 8 characters';
-      else if (commonPassword) error = 'Please choose a more secure password';
-      else if (score < 60) error = 'Password strength is weak';
+    // Clear existing timeout
+    if (passwordAnalysisTimeout.current) {
+      clearTimeout(passwordAnalysisTimeout.current);
     }
 
-    setFormValidation(prev => ({
-      ...prev,
-      password: { isValid, error, strength: score, requirements },
-    }));
+    // Debounce the analysis to prevent excessive updates
+    passwordAnalysisTimeout.current = setTimeout(() => {
+      const hasUppercase = /[A-Z]/.test(passwordValue);
+      const hasLowercase = /[a-z]/.test(passwordValue);
+      const hasNumbers = /\d/.test(passwordValue);
+      const hasSymbols = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(passwordValue);
+      const minLength = passwordValue.length >= 8;
 
-    setSecurityMetrics(prev => ({
-      ...prev,
-      passwordStrength: {
-        score,
+      // Common password check (simplified)
+      const commonPasswords = [
+        'password', '123456', 'password123', 'admin', 'qwerty',
+        'letmein', 'welcome', 'monkey', '1234567890', 'password1'
+      ];
+      const commonPassword = commonPasswords.includes(passwordValue.toLowerCase());
+
+      let score = 0;
+      if (minLength) score += 20;
+      if (hasUppercase) score += 20;
+      if (hasLowercase) score += 20;
+      if (hasNumbers) score += 20;
+      if (hasSymbols) score += 20;
+      if (passwordValue.length >= 12) score += 10;
+      if (commonPassword) score -= 50;
+      
+      score = Math.max(0, Math.min(100, score));
+
+      const requirements = {
+        minLength,
         hasUppercase,
         hasLowercase,
         hasNumbers,
         hasSymbols,
-        length: passwordValue.length,
-        commonPassword,
-      },
-    }));
+      };
 
-    return score;
-  }, []);
+      const isValid = Object.values(requirements).every(req => req) && !commonPassword;
+      
+      let error: string | undefined;
+      if (passwordValue && !isValid) {
+        if (!minLength) error = 'Password must be at least 8 characters';
+        else if (commonPassword) error = 'Please choose a more secure password';
+        else if (score < 60) error = 'Password strength is weak';
+      }
+
+      // Batch state updates to prevent flashing
+      setFormValidation(prev => {
+        const newValidation = {
+          ...prev,
+          password: { isValid, error, strength: score, requirements },
+        };
+        
+        // Only update if there's a meaningful change
+        if (JSON.stringify(prev.password) === JSON.stringify(newValidation.password)) {
+          return prev;
+        }
+        
+        return newValidation;
+      });
+
+      setSecurityMetrics(prev => {
+        const newMetrics = {
+          ...prev,
+          passwordStrength: {
+            score,
+            hasUppercase,
+            hasLowercase,
+            hasNumbers,
+            hasSymbols,
+            length: passwordValue.length,
+            commonPassword,
+          },
+        };
+        
+        // Only update if there's a meaningful change
+        if (JSON.stringify(prev.passwordStrength) === JSON.stringify(newMetrics.passwordStrength)) {
+          return prev;
+        }
+        
+        return newMetrics;
+      });
+    }, 150); // 150ms debounce
+
+    return formValidation.password.strength || 0;
+  }, [formValidation.password.strength]);
 
   // ENHANCED: Password confirmation validation
   const validatePasswordConfirmation = useCallback((confirmValue: string) => {
@@ -681,19 +717,41 @@ const AuthScreen: React.FC = () => {
     </Surface>
   );
 
-  // ENHANCED: Password strength indicator component
-  const PasswordStrengthIndicator = ({ strength }: { strength: number }) => {
+  // ENHANCED: Password strength indicator component with stable rendering and throttling
+  const PasswordStrengthIndicator = React.memo(({ strength }: { strength: number }) => {
+    // Use a local state to prevent rapid updates
+    const [displayStrength, setDisplayStrength] = React.useState(strength);
+    const updateTimeout = React.useRef<NodeJS.Timeout | null>(null);
+
+    React.useEffect(() => {
+      // Clear existing timeout
+      if (updateTimeout.current) {
+        clearTimeout(updateTimeout.current);
+      }
+
+      // Throttle updates to every 200ms
+      updateTimeout.current = setTimeout(() => {
+        setDisplayStrength(strength);
+      }, 200);
+
+      return () => {
+        if (updateTimeout.current) {
+          clearTimeout(updateTimeout.current);
+        }
+      };
+    }, [strength]);
+
     const getStrengthColor = () => {
-      if (strength < 30) return theme.colors.error;
-      if (strength < 60) return '#FF9800'; // Orange
-      if (strength < 80) return '#2196F3'; // Blue
+      if (displayStrength < 30) return theme.colors.error;
+      if (displayStrength < 60) return '#FF9800'; // Orange
+      if (displayStrength < 80) return '#2196F3'; // Blue
       return theme.colors.primary;
     };
 
     const getStrengthText = () => {
-      if (strength < 30) return 'Weak';
-      if (strength < 60) return 'Fair';
-      if (strength < 80) return 'Good';
+      if (displayStrength < 30) return 'Weak';
+      if (displayStrength < 60) return 'Fair';
+      if (displayStrength < 80) return 'Good';
       return 'Strong';
     };
 
@@ -704,11 +762,11 @@ const AuthScreen: React.FC = () => {
             Password Strength: 
           </Text>
           <Text style={[styles.passwordStrengthText, { color: getStrengthColor() }]}>
-            {getStrengthText()} ({strength}%)
+            {getStrengthText()} ({displayStrength}%)
           </Text>
         </View>
         <ProgressBar 
-          progress={strength / 100}
+          progress={displayStrength / 100}
           color={getStrengthColor()}
           style={styles.passwordStrengthBar}
         />
@@ -736,7 +794,7 @@ const AuthScreen: React.FC = () => {
         </View>
       </View>
     );
-  };
+  });
 
   // ENHANCED: Security score display
   const SecurityScoreDisplay = () => (
@@ -873,7 +931,7 @@ const AuthScreen: React.FC = () => {
               {!isLogin && (
                 <Surface style={[styles.socialProofContainer, { backgroundColor: theme.colors.primaryContainer }]} elevation={1}>
                   <Text style={[styles.socialProofText, { color: theme.colors.onPrimaryContainer }]}>
-                    ✨ Join 25,000+ users transforming their notes with AI
+                    Join 25,000+ users transforming their notes with AI
                   </Text>
                 </Surface>
               )}
@@ -910,7 +968,9 @@ const AuthScreen: React.FC = () => {
                   value={password}
                   onChangeText={(value) => {
                     setPassword(value);
-                    analyzePasswordStrength(value);
+                    if (!isLogin) {
+                      analyzePasswordStrength(value);
+                    }
                     trackFieldInteraction('password');
                   }}
                   mode="outlined"

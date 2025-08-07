@@ -264,7 +264,7 @@ export default function ToneSelectionScreen() {
       // Animate insights appearance
       insightsOpacity.value = withSpring(1, { damping: 15 });
 
-      setSnackbarMessage(`💡 AI suggests ${insights.suggestedTone} tone (${Math.round(insights.confidence * 100)}% confidence)`);
+      setSnackbarMessage(`AI suggests ${insights.suggestedTone} tone (${Math.round(insights.confidence * 100)}% confidence)`);
       setShowSnackbar(true);
       
       // Track analytics
@@ -290,7 +290,7 @@ export default function ToneSelectionScreen() {
     const timer = setTimeout(() => {
       if ((documentText && documentText.length > 50) || (extractedText && extractedText.length > 50)) {
         // Simplified analysis for now until AIService is enhanced
-        setSnackbarMessage('💡 AI analysis suggests using Professional tone for this content');
+        setSnackbarMessage('AI analysis suggests using Professional tone for this content');
         setShowSnackbar(true);
       }
     }, 1000);
@@ -811,10 +811,10 @@ export default function ToneSelectionScreen() {
               style={styles.processingProgressBar}
             />
             <Text variant="bodySmall" style={[styles.processingStageText, { color: theme.colors.onSurfaceVariant }]}>
-              {processingStage === 'analyzing' && '🔍 Analyzing content...'}
-              {processingStage === 'transforming' && '✨ Transforming with AI...'}
-              {processingStage === 'optimizing' && '🎯 Optimizing tone...'}
-              {processingStage === 'finalizing' && '📝 Finalizing your note...'}
+              {processingStage === 'analyzing' && 'Analyzing content...'}
+              {processingStage === 'transforming' && 'Transforming with AI...'}
+              {processingStage === 'optimizing' && 'Optimizing tone...'}
+              {processingStage === 'finalizing' && 'Finalizing your note...'}
             </Text>
           </View>
         )}

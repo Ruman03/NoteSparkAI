@@ -728,9 +728,9 @@ export default function DocumentPreviewScreen() {
   const addStudyMarkers = useCallback((content: string): string => {
     // Add markers for important study elements
     return content
-      .replace(/\b(important|key|crucial|essential|fundamental)\b/gi, '⭐ $1')
-      .replace(/\b(definition|define)\b/gi, '📝 $1')
-      .replace(/\b(example|for instance)\b/gi, '💡 $1');
+      .replace(/\b(important|key|crucial|essential|fundamental)\b/gi, '★ $1')
+      .replace(/\b(definition|define)\b/gi, '◆ $1')
+      .replace(/\b(example|for instance)\b/gi, '◉ $1');
   }, []);
 
   // Back handler

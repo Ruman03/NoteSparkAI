@@ -977,7 +977,7 @@ export default function EditorScreen() {
           style={[styles.folderChip, { backgroundColor: theme.colors.primaryContainer }]}
           textStyle={{ color: theme.colors.onPrimaryContainer }}
         >
-          📁 {selectedFolderName}
+          {selectedFolderName}
         </Chip>
       </View>
 

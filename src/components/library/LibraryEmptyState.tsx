@@ -48,7 +48,7 @@ const LibraryEmptyState: React.FC<LibraryEmptyStateProps> = ({
         <Icon name="rocket-launch" size={72} color={theme.colors.primary} />
       </Surface>
       <Text variant="headlineLarge" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-        Welcome to NoteSpark AI! 🎉
+        Welcome to NoteSpark AI!
       </Text>
       <Text variant="bodyLarge" style={[styles.emptyDescription, { color: theme.colors.onSurfaceVariant }]}>
         Transform your documents into intelligent, AI-enhanced notes in seconds
