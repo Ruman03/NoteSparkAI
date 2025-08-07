@@ -86,10 +86,10 @@ try {
       UIManager.setLayoutAnimationEnabledExperimental &&
       typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
     
-    // Check if we're in the old architecture before calling
-    const hasNewArchWarning = false; // Will be true if New Architecture is detected
+    // Detect New Architecture by checking for TurboModuleRegistry
+    const isNewArchitecture = typeof (global as any).TurboModuleRegistry !== 'undefined';
     
-    if (!hasNewArchWarning) {
+    if (!isNewArchitecture) {
       UIManager.setLayoutAnimationEnabledExperimental(true);
     }
   }
