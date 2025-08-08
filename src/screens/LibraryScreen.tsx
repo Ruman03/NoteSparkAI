@@ -39,6 +39,7 @@ import {
   Portal,
   Modal,
   Chip,
+  TextInput,
 } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -139,6 +140,9 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showSnackbar, setShowSnackbar] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderColor, setNewFolderColor] = useState<string>(theme.colors.primary);
   const [metrics, setMetrics] = useState<LibraryMetrics>({
     totalFolders: 0,
     totalNotes: 0,
@@ -524,33 +528,33 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
   // FAB actions
   const handleNewFolder = useCallback(() => {
     hapticService.medium();
-    Alert.prompt(
-      'Create New Folder',
-      'Enter a name for your new folder:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Create',
-          onPress: async (folderName: string | undefined) => {
-            if (folderName && folderName.trim()) {
-              try {
-                await createFolder({ 
-                  name: folderName.trim(),
-                  description: '', 
-                  color: theme.colors.primary 
-                });
-                hapticService.success();
-                loadData(true); // Refresh data
-              } catch (error) {
-                Alert.alert('Error', 'Failed to create folder. Please try again.');
-              }
-            }
-          },
-        },
-      ],
-      'plain-text'
-    );
-  }, [createFolder, theme.colors.primary]); // Remove loadData dependency
+    setNewFolderName('');
+    setShowCreateFolderModal(true);
+  }, []);
+
+  const confirmCreateFolder = useCallback(async () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) {
+      setSnackbarMessage('Folder name cannot be empty');
+      setShowSnackbar(true);
+      return;
+    }
+    try {
+      await createFolder({
+        name: trimmed,
+        description: '',
+        color: newFolderColor,
+      });
+      setShowCreateFolderModal(false);
+      hapticService.success();
+      setSnackbarMessage('Folder created');
+      setShowSnackbar(true);
+      loadData(true);
+    } catch (e) {
+      setSnackbarMessage('Failed to create folder');
+      setShowSnackbar(true);
+    }
+  }, [createFolder, newFolderName, theme.colors.primary, loadData]);
 
   const handleScanDocument = useCallback(() => {
     hapticService.medium();
@@ -748,6 +752,37 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
                   : 'Start by scanning or creating a new note'
               }
             </Text>
+            {!searchQuery && (
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                {activeTab === 'folders' ? (
+                  <Button mode="contained" onPress={handleNewFolder}>
+                    Create Folder
+                  </Button>
+                ) : (
+                  <>
+                    <Button mode="contained" onPress={handleScanDocument}>
+                      Scan a Document
+                    </Button>
+                    <Button
+                      mode="outlined"
+                      onPress={() => {
+                        const parentNav = navigation.getParent();
+                        parentNav?.navigate('Editor', {
+                          noteText: '',
+                          tone: 'professional',
+                          originalText: '',
+                          folderId: selectedFolder?.id ?? null,
+                          folderName: selectedFolder?.name ?? undefined,
+                          noteTitle: 'New Note',
+                        });
+                      }}
+                    >
+                      New Blank Note
+                    </Button>
+                  </>
+                )}
+              </View>
+            )}
           </View>
         ) : (
           <FlashList
@@ -792,6 +827,62 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
         onEditNote={handleEditNote}
         onNoteDeleted={handleNoteDeleted}
       />
+
+      {/* Create Folder Modal (cross-platform) */}
+      <Portal>
+        <Modal
+          visible={showCreateFolderModal}
+          onDismiss={() => setShowCreateFolderModal(false)}
+          contentContainerStyle={[
+            {
+              backgroundColor: theme.colors.surface,
+              borderRadius: 16,
+              margin: 20,
+              padding: 20,
+            },
+          ]}
+        >
+          <Text variant="titleLarge" style={{ fontWeight: '600', marginBottom: 12 }}>
+            Create New Folder
+          </Text>
+          <TextInput
+            mode="outlined"
+            label="Folder name"
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            autoFocus
+          />
+          <Text variant="bodySmall" style={{ marginTop: 12, marginBottom: 8, color: theme.colors.onSurfaceVariant }}>
+            Choose a color
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {['#6750A4','#386641','#0B7285','#A61E4D','#B08968','#5C940D','#7B2CBF','#0891B2'].map((c) => (
+              <TouchableOpacity
+                key={c}
+                onPress={() => setNewFolderColor(c)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: c,
+                  borderWidth: newFolderColor === c ? 3 : 1,
+                  borderColor: newFolderColor === c ? theme.colors.onSurface : 'rgba(0,0,0,0.2)'
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Select color ${c}`}
+              />
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+            <Button mode="outlined" onPress={() => setShowCreateFolderModal(false)} style={{ flex: 1 }}>
+              Cancel
+            </Button>
+            <Button mode="contained" onPress={confirmCreateFolder} style={{ flex: 1 }}>
+              Create
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
 
       {/* ENHANCED: Gemini Insights Modal */}
       <Portal>

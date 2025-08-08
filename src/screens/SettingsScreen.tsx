@@ -55,6 +55,8 @@ import { AIService } from '../services/AIService';
 import AppIcon from '../components/AppIcon';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import type { SettingsScreenNavigationProp } from '../types/navigation';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { request, RESULTS, PERMISSIONS } from 'react-native-permissions';
 
 const { width, height } = Dimensions.get('window');
 
@@ -380,14 +382,42 @@ const SettingsScreen: React.FC = () => {
   ) => {
     try {
       hapticService.light();
-      setSecuritySettings(prev => ({ ...prev, [key]: value }));
-      
-      // Special handling for biometric/app lock
-      if (key === 'biometricEnabled' || key === 'appLockEnabled') {
-        // TODO: Implement biometric authentication
-        console.log(`${key} updated to:`, value);
+
+      if (key === 'biometricEnabled') {
+        if (value) {
+          // Request biometric permission before enabling
+          if (Platform.OS === 'ios') {
+            // iOS has FACE_ID permission gate
+            try {
+              const result = await request(PERMISSIONS.IOS.FACE_ID);
+              if (result !== RESULTS.GRANTED) {
+                Alert.alert(
+                  'Biometrics Not Available',
+                  'We could not enable biometrics. Please ensure Face ID/Touch ID is set up in Settings.'
+                );
+                setSecuritySettings(prev => ({ ...prev, biometricEnabled: false }));
+                hapticService.error();
+                return;
+              }
+            } catch (e) {
+              console.warn('Biometric permission request failed:', e);
+              setSecuritySettings(prev => ({ ...prev, biometricEnabled: false }));
+              hapticService.error();
+              return;
+            }
+          } else {
+            // Android runtime permissions for biometrics are handled by the auth flow.
+            // We enable the toggle and verify on first unlock attempt.
+          }
+        }
+        setSecuritySettings(prev => ({ ...prev, biometricEnabled: Boolean(value) }));
+      } else if (key === 'appLockEnabled') {
+        // App lock flag only; actual lock flow handled on app resume/open elsewhere
+        setSecuritySettings(prev => ({ ...prev, appLockEnabled: Boolean(value) }));
+      } else {
+        setSecuritySettings(prev => ({ ...prev, [key]: value }));
       }
-      
+
       setSnackbarMessage(`Security setting updated`);
       setShowSnackbar(true);
       hapticService.success();
@@ -546,9 +576,15 @@ Analytics Consent: ${securitySettings.anonymousAnalytics ? 'Yes' : 'No'}`;
           { 
             text: 'Copy Email', 
             onPress: () => {
-              // TODO: Copy to clipboard
-              setSnackbarMessage('Email copied to clipboard');
-              setShowSnackbar(true);
+              try {
+                Clipboard.setString(email);
+                setSnackbarMessage('Email copied to clipboard');
+                setShowSnackbar(true);
+                hapticService.success();
+              } catch (e) {
+                console.warn('Clipboard copy failed:', e);
+                hapticService.error();
+              }
             } 
           },
           { text: 'OK' }

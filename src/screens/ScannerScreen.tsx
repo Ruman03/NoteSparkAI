@@ -39,6 +39,7 @@ import {
   Switch,
   Snackbar
 } from 'react-native-paper';
+import { TextInput } from 'react-native-paper';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -619,6 +620,7 @@ const ScannerScreen: React.FC = () => {
     realTimeAnalysisEnabled: true,
     hapticFeedbackLevel: 'medium',
   });
+  const analyticsDebounceRef = useRef<{ [key: string]: number }>({});
   
   // ENHANCED: Modal and Snackbar States
   const [showInsightsModal, setShowInsightsModal] = useState(false);
@@ -654,6 +656,9 @@ const ScannerScreen: React.FC = () => {
   // Zoom level indicator animation
   const zoomIndicatorOpacity = useSharedValue(0);
   const zoomIndicatorScale = useSharedValue(0.8);
+
+  // Auto-capture cooldown
+  const lastAutoCaptureRef = useRef<number>(0);
 
   // Reset zoom when device changes
   useEffect(() => {
@@ -896,6 +901,11 @@ const ScannerScreen: React.FC = () => {
 
   // ENHANCED: Analytics tracking with detailed document intelligence
   const trackScanAnalytics = useCallback((action: string, data?: any) => {
+    const now = Date.now();
+    const last = analyticsDebounceRef.current[action] || 0;
+    // Debounce noisy actions to at most once per 500ms
+    if (now - last < 500) return;
+    analyticsDebounceRef.current[action] = now;
     setScannerAnalytics(prev => {
       const updatedAnalytics = { ...prev };
       
@@ -931,6 +941,14 @@ const ScannerScreen: React.FC = () => {
       return updatedAnalytics;
     });
   }, []);
+
+  // Torch/auto-flash tuning helper
+  const getFlashModeForScene = useCallback((): 'on' | 'off' | 'auto' => {
+    if (!smartPreferences.smartFlashEnabled) return flash;
+    const lightingGood = documentDetection?.quality === 'excellent' || documentDetection?.quality === 'good';
+    if (lightingGood) return 'off';
+    return 'auto';
+  }, [flash, smartPreferences.smartFlashEnabled, documentDetection?.quality]);
 
   // ENHANCED: AI-powered document intelligence analysis
   const analyzeDocumentIntelligence = useCallback(async (imageUri: string): Promise<DocumentIntelligence> => {
@@ -1013,8 +1031,8 @@ const ScannerScreen: React.FC = () => {
   }, []);
 
   // ENHANCED: Document detection with real-time intelligence
-  const performDocumentDetection = useCallback(async () => {
-    if (!smartPreferences.realTimeAnalysisEnabled) return;
+  const performDocumentDetection = useCallback(async (): Promise<DocumentDetectionResult | null> => {
+    if (!smartPreferences.realTimeAnalysisEnabled) return null;
     
     try {
       // Simulate real-time document detection
@@ -1054,10 +1072,38 @@ const ScannerScreen: React.FC = () => {
       };
       
       setDocumentDetection(detection);
+      return detection;
     } catch (error) {
       console.error('Document detection failed:', error);
+      return null;
     }
   }, [smartPreferences.realTimeAnalysisEnabled]);
+
+  // Auto-capture loop based on detection results and preferences
+  useEffect(() => {
+    if (!autoCapture || !isCameraReady || isProcessing) return;
+    let isActive = true;
+    const interval = setInterval(async () => {
+      if (!isActive) return;
+      const detection = await performDocumentDetection();
+      const now = Date.now();
+      if (
+        detection &&
+        detection.isDocument &&
+        detection.confidence >= smartPreferences.qualityThreshold &&
+        detection.realTimeAnalysis.readabilityScore >= smartPreferences.qualityThreshold &&
+        now - lastAutoCaptureRef.current >= smartPreferences.autoCaptureDelay
+      ) {
+        lastAutoCaptureRef.current = now;
+        trackScanAnalytics('auto_capture');
+        takePhoto();
+      }
+    }, 800);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [autoCapture, isCameraReady, isProcessing, performDocumentDetection, smartPreferences.qualityThreshold, smartPreferences.autoCaptureDelay, takePhoto, trackScanAnalytics]);
 
   const handleDeletePage = useCallback((index: number) => {
     setScannedPages(currentPages => {
@@ -1123,6 +1169,7 @@ const ScannerScreen: React.FC = () => {
             device={device}
             isActive={true}
             photo={true}
+            torch={flash === 'on' ? 'on' : 'off'}
             onInitialized={() => setIsCameraReady(true)}
             enableZoomGesture={false} // We handle zoom manually
             animatedProps={animatedProps}
@@ -1158,11 +1205,19 @@ const ScannerScreen: React.FC = () => {
         >
           {autoCapture ? 'Auto-ON' : 'Auto-OFF'}
         </Chip>
-        <Appbar.Action 
-          icon={flash === 'on' ? 'flash' : flash === 'auto' ? 'flash-auto' : 'flash-off'} 
-          onPress={() => setFlash(f => (f === 'on' ? 'off' : f === 'off' ? 'auto' : 'on'))} 
-          color="white" 
-        />
+        {device?.hasFlash && (
+          <Appbar.Action 
+            icon={flash === 'on' ? 'flash' : flash === 'auto' ? 'flash-auto' : 'flash-off'} 
+            onPress={() => {
+              setFlash(f => {
+                const next = f === 'on' ? 'off' : f === 'off' ? 'auto' : 'on';
+                trackScanAnalytics('flash_mode_change', { next });
+                return next;
+              });
+            }} 
+            color="white" 
+          />
+        )}
         <Appbar.Action 
           icon="robot" 
           onPress={() => setShowInsightsModal(true)} 
@@ -1193,7 +1248,7 @@ const ScannerScreen: React.FC = () => {
 
           {isProcessing ? 
             <ActivityIndicator color="white" size="large" style={styles.processingIndicator}/> :
-            <IconButton icon="crop-rotate" iconColor="white" size={28} style={styles.controlButton} />
+            <IconButton icon="tune" iconColor="white" size={28} style={styles.controlButton} onPress={() => setShowSettingsModal(true)} />
           }
         </View>
       </View>
@@ -1216,6 +1271,75 @@ const ScannerScreen: React.FC = () => {
         onExportData={handleExportData}
         onShowInsights={handleShowInsights}
       />
+
+      {/* Scanner Settings Modal */}
+      <Portal>
+        <Modal
+          visible={showSettingsModal}
+          onDismiss={() => setShowSettingsModal(false)}
+          contentContainerStyle={[styles.modal, { backgroundColor: theme.colors.surface }]}
+        >
+          <View style={styles.modalHeader}>
+            <Icon name="tune" size={32} color={theme.colors.primary} />
+            <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Scanner Settings</Text>
+          </View>
+
+          <View style={{ gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.colors.onSurface }}>Auto Capture</Text>
+              <Switch value={autoCapture} onValueChange={setAutoCapture} />
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.colors.onSurface }}>Real-time Analysis</Text>
+              <Switch
+                value={smartPreferences.realTimeAnalysisEnabled}
+                onValueChange={(v) => setSmartPreferences(p => ({ ...p, realTimeAnalysisEnabled: v }))}
+              />
+            </View>
+
+            <Text style={{ color: theme.colors.onSurface, marginTop: 8 }}>Detection Sensitivity</Text>
+            <SegmentedButtons
+              value={smartPreferences.documentDetectionSensitivity}
+              onValueChange={(v) => setSmartPreferences(p => ({ ...p, documentDetectionSensitivity: v as any }))}
+              buttons={[
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+              ]}
+            />
+
+            <Text style={{ color: theme.colors.onSurface, marginTop: 8 }}>Auto Capture Delay (ms)</Text>
+            <TextInput
+              mode="outlined"
+              keyboardType="numeric"
+              value={String(smartPreferences.autoCaptureDelay)}
+              onChangeText={(t) => {
+                const n = parseInt(t, 10);
+                if (!isNaN(n)) setSmartPreferences(p => ({ ...p, autoCaptureDelay: Math.max(500, n) }));
+              }}
+            />
+
+            <Text style={{ color: theme.colors.onSurface, marginTop: 8 }}>Haptic Feedback</Text>
+            <SegmentedButtons
+              value={smartPreferences.hapticFeedbackLevel}
+              onValueChange={(v) => setSmartPreferences(p => ({ ...p, hapticFeedbackLevel: v as any }))}
+              buttons={[
+                { value: 'off', label: 'Off' },
+                { value: 'light', label: 'Light' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'strong', label: 'Strong' },
+              ]}
+            />
+
+            <View style={styles.modalActions}>
+              <Button mode="outlined" onPress={() => setShowSettingsModal(false)} style={styles.modalButton}>
+                Close
+              </Button>
+            </View>
+          </View>
+        </Modal>
+      </Portal>
 
       {/* ENHANCED: AI Insights Modal */}
       <Portal>

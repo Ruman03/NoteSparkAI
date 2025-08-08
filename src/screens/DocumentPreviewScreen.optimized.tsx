@@ -9,12 +9,10 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Alert,
   BackHandler,
   SafeAreaView,
   Dimensions,
   StatusBar,
-  TouchableOpacity,
   Share,
   RefreshControl,
   Animated,
@@ -22,12 +20,6 @@ import {
   InteractionManager,
   LayoutAnimation,
   UIManager,
-  Vibration,
-  Linking,
-  AppState,
-  AppStateStatus,
-  PanResponder,
-  Keyboard,
 } from 'react-native';
 import {
   Appbar,
@@ -43,32 +35,20 @@ import {
   Portal,
   Dialog,
   Paragraph,
-  List,
   Title,
   Subheading,
   Caption,
-  Badge,
   ProgressBar,
   Menu,
   Snackbar,
-  TextInput,
-  Switch,
   Avatar,
-  DataTable,
-  Checkbox,
-  RadioButton,
-  HelperText,
   SegmentedButtons,
-  Searchbar,
-  Tooltip,
   Banner,
 } from 'react-native-paper';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { hapticService } from '../services/HapticService';
 import DocumentProcessor from '../services/DocumentProcessor';
-import { AIService } from '../services/AIService';
 import type { 
   RootStackParamList,
   UploadSession,
@@ -215,24 +195,22 @@ export default function DocumentPreviewScreen() {
   // Refs for animations and interactions
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnimation = useRef(new Animated.Value(0)).current;
-  const slideAnimation = useRef(new Animated.Value(screenHeight)).current;
-  const progressAnimation = useRef(new Animated.Value(0)).current;
-  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Removed unused animations/timeouts for this screen
 
   // Services
   const documentProcessor = useMemo(() => new DocumentProcessor(), []);
-  const aiService = useMemo(() => AIService.getInstance(), []);
 
   // Initialize component
   useEffect(() => {
-    initializeDocumentPreview();
+    // Defer heavy work until interactions finish
+    const task = InteractionManager.runAfterInteractions(() => {
+      initializeDocumentPreview();
+    });
     startFadeInAnimation();
     trackScreenView();
 
     return () => {
-      if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
-      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+      task.cancel?.();
     };
   }, []);
 
@@ -274,10 +252,7 @@ export default function DocumentPreviewScreen() {
 
       // Step 1: Enhanced text extraction
       updateProcessingStep('extract', 'active', 25);
-      const extractedContent = await documentProcessor.processDocument(
-        file.uri,
-        file.type || 'application/octet-stream'
-      );
+  const processingResult = await documentProcessor.processDocument(file);
 
       updateProcessingStep('extract', 'completed', 100);
       updateProcessingStep('analyze', 'active', 0);
@@ -289,7 +264,7 @@ export default function DocumentPreviewScreen() {
         progress: 25,
       }));
 
-      const analysis = await performContentAnalysis(extractedContent.content || extractedContent.extractedText || '');
+  const analysis = await performContentAnalysis(processingResult.extractedText || '');
       updateProcessingStep('analyze', 'completed', 100);
       updateProcessingStep('insights', 'active', 0);
 
@@ -300,7 +275,7 @@ export default function DocumentPreviewScreen() {
         progress: 50,
       }));
 
-      const insights = await generateDocumentInsights(extractedContent.content || extractedContent.extractedText || '');
+  const insights = await generateDocumentInsights(processingResult.extractedText || '');
       updateProcessingStep('insights', 'completed', 100);
       updateProcessingStep('optimize', 'active', 0);
 
@@ -311,7 +286,7 @@ export default function DocumentPreviewScreen() {
         progress: 75,
       }));
 
-      const optimizedContent = await optimizeContentForStudy(extractedContent.content || extractedContent.extractedText || '');
+  const optimizedContent = await optimizeContentForStudy(processingResult.extractedText || '');
       updateProcessingStep('optimize', 'completed', 100);
       updateProcessingStep('finalize', 'active', 0);
 
@@ -325,11 +300,11 @@ export default function DocumentPreviewScreen() {
       const processingTime = Date.now() - startTime;
       const enhanced: EnhancedDocumentData = {
         extractedText: optimizedContent,
-        title: extractedContent.title || result.title || generateFallbackTitle(),
+        title: processingResult.metadata.title || result?.metadata?.title || generateFallbackTitle(),
         metadata: {
           processingTime,
-          confidence: extractedContent.confidence || 0.95,
-          extractedPages: extractedContent.pageCount || 1,
+          confidence: 0.95,
+          extractedPages: processingResult.metadata.pageCount || 1,
           wordCount: countWords(optimizedContent),
           language: detectLanguage(optimizedContent),
           readingTime: calculateReadingTime(optimizedContent),
@@ -382,13 +357,13 @@ export default function DocumentPreviewScreen() {
       
       // Fallback to basic data
       setEnhancedData({
-        extractedText: result.extractedText || 'Content could not be extracted.',
-        title: result.title || 'Document Preview',
+        extractedText: result?.extractedText || 'Content could not be extracted.',
+        title: result?.metadata?.title || 'Document Preview',
         metadata: {
           processingTime: 0,
           confidence: 0.5,
           extractedPages: 1,
-          wordCount: countWords(result.extractedText || ''),
+          wordCount: countWords(result?.extractedText || ''),
           language: 'en',
           readingTime: 1,
           complexity: 'Medium',
@@ -528,14 +503,15 @@ export default function DocumentPreviewScreen() {
       });
 
       navigation.navigate('ToneSelection', {
-        uploadSession: {
-          ...uploadSession,
-          result: {
-            ...result,
-            extractedText: enhancedData.extractedText,
-            title: enhancedData.title,
-          },
+        documentText: enhancedData.extractedText,
+        documentMetadata: {
+          title: enhancedData.title,
+          wordCount: enhancedData.metadata.wordCount,
+          pageCount: enhancedData.metadata.extractedPages,
+          fileSize: file.size,
+          mimeType: file.type,
         },
+        isDocumentUpload: true,
       });
     } catch (error) {
       console.error('DocumentPreviewScreen: Continue failed:', error);
@@ -586,7 +562,9 @@ export default function DocumentPreviewScreen() {
   }, [countWords]);
 
   const assessComplexity = useCallback((text: string): 'Low' | 'Medium' | 'High' => {
-    const avgWordsPerSentence = countWords(text) / (text.split(/[.!?]+/).length - 1);
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const sentenceCount = Math.max(1, sentences.length);
+    const avgWordsPerSentence = countWords(text) / sentenceCount;
     if (avgWordsPerSentence < 15) return 'Low';
     if (avgWordsPerSentence < 25) return 'Medium';
     return 'High';
@@ -595,7 +573,11 @@ export default function DocumentPreviewScreen() {
   // Content analysis utilities
   const generateSummary = useCallback((content: string): string => {
     const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
-    return sentences.slice(0, 3).join('. ') + '.';
+    if (sentences.length === 0) {
+      return (content || '').trim().slice(0, 140);
+    }
+    const summary = sentences.slice(0, 3).join('. ');
+    return summary.endsWith('.') ? summary : summary + '.';
   }, []);
 
   const extractKeyPoints = useCallback((sentences: string[]): string[] => {
@@ -680,18 +662,15 @@ export default function DocumentPreviewScreen() {
   }, [countWords]);
 
   const analyzeSentiment = useCallback((content: string) => {
-    // Simple sentiment analysis
+    // Simple sentiment analysis normalized by word count
     const positive = (content.match(/\b(good|great|excellent|amazing|wonderful|positive|success)\b/gi) || []).length;
     const negative = (content.match(/\b(bad|terrible|awful|horrible|negative|fail|problem)\b/gi) || []).length;
-    const total = positive + negative;
-    
-    if (total === 0) return { positive: 0.33, negative: 0.33, neutral: 0.34 };
-    
-    return {
-      positive: positive / total,
-      negative: negative / total,
-      neutral: Math.max(0, 1 - (positive + negative) / total),
-    };
+    const words = content.match(/\b\w+\b/g) || [];
+    const wordCount = Math.max(1, words.length);
+    const posPct = Math.min(1, positive / wordCount);
+    const negPct = Math.min(1, negative / wordCount);
+    const neutral = Math.max(0, Math.min(1, 1 - posPct - negPct));
+    return { positive: posPct, negative: negPct, neutral };
   }, []);
 
   const extractEntities = useCallback((content: string) => {
@@ -860,9 +839,13 @@ export default function DocumentPreviewScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                setTimeout(() => setRefreshing(false), 1000);
+              onRefresh={async () => {
+                try {
+                  setRefreshing(true);
+                  await initializeDocumentPreview();
+                } finally {
+                  setRefreshing(false);
+                }
               }}
               colors={[theme.colors.primary]}
             />
@@ -956,20 +939,23 @@ export default function DocumentPreviewScreen() {
                       onPress={() => toggleSection('content')}
                     />
                   </View>
-                  {(expandedSections.has('content') || true) && (
-                    <View style={styles.previewContent}>
-                      <Text style={styles.previewText} numberOfLines={20}>
-                        {enhancedData.extractedText}
-                      </Text>
-                      <Button 
-                        mode="outlined" 
+                  <View style={styles.previewContent}>
+                    <Text
+                      style={styles.previewText}
+                      numberOfLines={expandedSections.has('content') ? undefined : 20}
+                    >
+                      {enhancedData.extractedText}
+                    </Text>
+                    {enhancedData.extractedText.length > 500 && (
+                      <Button
+                        mode="outlined"
                         onPress={() => toggleSection('content')}
                         style={styles.expandButton}
                       >
-                        {enhancedData.extractedText.length > 1000 ? 'Show Full Content' : 'Show Less'}
+                        {expandedSections.has('content') ? 'Show Less' : 'Show Full Content'}
                       </Button>
-                    </View>
-                  )}
+                    )}
+                  </View>
                 </Card.Content>
               </Card>
 

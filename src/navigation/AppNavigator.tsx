@@ -12,7 +12,7 @@ import { hapticService } from '../services/HapticService';
 import HomeScreen from '../screens/HomeScreen';
 import ScannerScreen from '../screens/ScannerScreen';
 import DocumentUploadScreen from '../screens/DocumentUploadScreen';
-import DocumentPreviewScreen from '../screens/DocumentPreviewScreen';
+import DocumentPreviewScreen from '../screens/DocumentPreviewScreen.optimized';
 import ToneSelectionScreen from '../screens/ToneSelectionScreen';
 import EditorScreen from '../screens/EditorScreen';
 import LibraryScreen from '../screens/LibraryScreen';

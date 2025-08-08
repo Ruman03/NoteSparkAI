@@ -111,6 +111,15 @@ interface EditorState {
   metrics: EditorMetrics;
   geminiAssistance: GeminiAssistance;
   writingAnalytics: WritingAnalytics;
+  // UI: Appbar and modals
+  showAppbarMenu: boolean;
+  showSaveAsModal: boolean;
+  showShortcutsModal: boolean;
+  // Save As temp state
+  showSaveAsFolderSelector: boolean;
+  saveAsTitle: string;
+  saveAsFolderId: string | null;
+  saveAsFolderName: string;
 }
 
 type EditorAction =
@@ -146,7 +155,13 @@ type EditorAction =
   | { type: 'SET_REFRESHING'; payload: boolean }
   | { type: 'UPDATE_METRICS'; payload: Partial<EditorMetrics> }
   | { type: 'UPDATE_GEMINI_SUGGESTION'; payload: Partial<GeminiAssistance> }
-  | { type: 'UPDATE_WRITING_ANALYTICS'; payload: Partial<WritingAnalytics> };
+  | { type: 'UPDATE_WRITING_ANALYTICS'; payload: Partial<WritingAnalytics> }
+  | { type: 'TOGGLE_APPBAR_MENU' }
+  | { type: 'TOGGLE_SAVE_AS_MODAL' }
+  | { type: 'TOGGLE_SHORTCUTS_MODAL' }
+  | { type: 'TOGGLE_SAVE_AS_FOLDER_SELECTOR' }
+  | { type: 'SET_SAVE_AS_TITLE'; payload: string }
+  | { type: 'SET_SAVE_AS_FOLDER'; payload: { id: string | null; name: string } };
 
 const initialEditorState: EditorState = {
   isLoading: true,
@@ -203,7 +218,16 @@ const initialEditorState: EditorState = {
     pausesCount: 0,
     backspacesCount: 0,
     averageTypingSpeed: 0
-  }
+  },
+  // UI
+  showAppbarMenu: false,
+  showSaveAsModal: false,
+  showShortcutsModal: false,
+  // Save As temp state
+  showSaveAsFolderSelector: false,
+  saveAsTitle: '',
+  saveAsFolderId: null,
+  saveAsFolderName: 'Inbox'
 };
 
 function editorReducer(state: EditorState, action: EditorAction): EditorState {
@@ -301,6 +325,18 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         ...state,
         writingAnalytics: { ...state.writingAnalytics, ...action.payload }
       };
+    case 'TOGGLE_APPBAR_MENU':
+      return { ...state, showAppbarMenu: !state.showAppbarMenu };
+    case 'TOGGLE_SAVE_AS_MODAL':
+      return { ...state, showSaveAsModal: !state.showSaveAsModal };
+    case 'TOGGLE_SHORTCUTS_MODAL':
+      return { ...state, showShortcutsModal: !state.showShortcutsModal };
+    case 'TOGGLE_SAVE_AS_FOLDER_SELECTOR':
+      return { ...state, showSaveAsFolderSelector: !state.showSaveAsFolderSelector };
+    case 'SET_SAVE_AS_TITLE':
+      return { ...state, saveAsTitle: action.payload };
+    case 'SET_SAVE_AS_FOLDER':
+      return { ...state, saveAsFolderId: action.payload.id, saveAsFolderName: action.payload.name };
     default:
       return state;
   }
@@ -327,7 +363,9 @@ export default function EditorScreen() {
     showFolderSelector, showFontMenu, showColorPicker, showTableModal,
     showMoreMenu, isOnline, isSyncing, showLinkModal, selectedFontSize,
     linkUrl, linkText, tableRows, tableCols, refreshing, showGeminiAssist,
-    showAnalytics, metrics, geminiAssistance, writingAnalytics
+  showAnalytics, metrics, geminiAssistance, writingAnalytics,
+  showAppbarMenu, showSaveAsModal, showShortcutsModal,
+  showSaveAsFolderSelector, saveAsTitle, saveAsFolderId, saveAsFolderName
   } = state;
 
   // OPTIMIZED: Advanced editor functions using dispatch
@@ -958,6 +996,43 @@ export default function EditorScreen() {
             style={{ marginRight: 8 }}
           />
         )}
+        <Menu
+          visible={showAppbarMenu}
+          onDismiss={() => dispatch({ type: 'TOGGLE_APPBAR_MENU' })}
+          anchor={
+            <IconButton
+              icon="dots-vertical"
+              size={22}
+              iconColor={theme.colors.onSurface}
+              onPress={() => {
+                // Initialize Save As defaults on open for quick access
+                if (!showAppbarMenu) {
+                  dispatch({ type: 'SET_SAVE_AS_TITLE', payload: noteTitle ? `Copy of ${noteTitle}` : 'Copy of New Note' });
+                  dispatch({ type: 'SET_SAVE_AS_FOLDER', payload: { id: selectedFolderId, name: selectedFolderName } });
+                }
+                dispatch({ type: 'TOGGLE_APPBAR_MENU' });
+              }}
+              style={{ marginRight: 4 }}
+            />
+          }
+        >
+          <Menu.Item
+            onPress={() => {
+              dispatch({ type: 'TOGGLE_APPBAR_MENU' });
+              dispatch({ type: 'TOGGLE_SAVE_AS_MODAL' });
+            }}
+            title="Save As…"
+            leadingIcon="content-save"
+          />
+          <Menu.Item
+            onPress={() => {
+              dispatch({ type: 'TOGGLE_APPBAR_MENU' });
+              dispatch({ type: 'TOGGLE_SHORTCUTS_MODAL' });
+            }}
+            title="Keyboard Shortcuts"
+            leadingIcon="keyboard"
+          />
+        </Menu>
         <Button 
           mode="contained" 
           onPress={handleSave} 
@@ -1780,6 +1855,106 @@ export default function EditorScreen() {
       )}
     </KeyboardAvoidingView>
 
+    {/* Save As Modal */}
+    <Portal>
+      <Modal
+        visible={showSaveAsModal}
+        onDismiss={() => dispatch({ type: 'TOGGLE_SAVE_AS_MODAL' })}
+        contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+      >
+        <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Save As…</Text>
+        <TextInput
+          mode="outlined"
+          label="Title"
+          value={saveAsTitle}
+          onChangeText={(t) => dispatch({ type: 'SET_SAVE_AS_TITLE', payload: t })}
+          style={{ marginBottom: 16 }}
+        />
+        <View style={{ marginBottom: 16 }}>
+          <Chip
+            icon={saveAsFolderId ? 'folder' : 'inbox'}
+            onPress={() => dispatch({ type: 'TOGGLE_SAVE_AS_FOLDER_SELECTOR' })}
+            style={[styles.folderChip, { backgroundColor: theme.colors.primaryContainer }]}
+            textStyle={{ color: theme.colors.onPrimaryContainer }}
+          >
+            {saveAsFolderName}
+          </Chip>
+        </View>
+        <View style={styles.modalActions}>
+          <Button mode="outlined" onPress={() => dispatch({ type: 'TOGGLE_SAVE_AS_MODAL' })} style={styles.modalButton}>Cancel</Button>
+          <Button
+            mode="contained"
+            onPress={async () => {
+              try {
+                const html = richText.current ? await richText.current.getContentHtml() : currentContent;
+                const textContent = html.replace(/<[^>]*>/g, '').trim();
+                if (!textContent) {
+                  Alert.alert('Empty Note', 'Add some content before saving a copy.');
+                  return;
+                }
+                const notesService = NotesService.getInstance();
+                const user = auth().currentUser;
+                if (!user) throw new Error('No authenticated user');
+                const newId = await notesService.saveNote(user.uid, {
+                  title: saveAsTitle || noteTitle || 'New Note',
+                  content: html,
+                  plainText: textContent,
+                  tone: 'professional',
+                  originalText: originalText || '',
+                  tags: [],
+                  folderId: saveAsFolderId ?? selectedFolderId ?? null,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+                // Update local state and nav to the new note
+                dispatch({ type: 'SET_NOTE_ID', payload: newId });
+                dispatch({ type: 'SET_SELECTED_FOLDER', payload: { id: saveAsFolderId ?? selectedFolderId ?? null, name: saveAsFolderName || selectedFolderName } });
+                navigation.setParams({ noteId: newId, noteTitle: saveAsTitle, folderId: saveAsFolderId ?? selectedFolderId ?? null, folderName: saveAsFolderName || selectedFolderName });
+                dispatch({ type: 'TOGGLE_SAVE_AS_MODAL' });
+                hapticService.success();
+                Alert.alert('Saved', 'A copy was saved successfully.');
+              } catch (e) {
+                console.error('Save As failed', e);
+                hapticService.error();
+                Alert.alert('Error', 'Failed to save a copy.');
+              }
+            }}
+            style={styles.modalButton}
+          >
+            Save Copy
+          </Button>
+        </View>
+      </Modal>
+    </Portal>
+
+    {/* Keyboard Shortcuts Modal */}
+    <Portal>
+      <Modal
+        visible={showShortcutsModal}
+        onDismiss={() => dispatch({ type: 'TOGGLE_SHORTCUTS_MODAL' })}
+        contentContainerStyle={[styles.modalContainer, { backgroundColor: theme.colors.surface }]}
+      >
+        <Text variant="headlineSmall" style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Keyboard Shortcuts</Text>
+        <Text variant="bodyMedium" style={{ marginBottom: 12, color: theme.colors.onSurfaceVariant }}>
+          When using a hardware keyboard, these shortcuts help speed up editing:
+        </Text>
+        <View style={{ gap: 8 }}>
+          <Text>- Bold: Ctrl/Command + B</Text>
+          <Text>- Italic: Ctrl/Command + I</Text>
+          <Text>- Underline: Ctrl/Command + U</Text>
+          <Text>- Undo: Ctrl/Command + Z</Text>
+          <Text>- Redo: Ctrl/Command + Y</Text>
+          <Text>- Bullet List: Ctrl/Command + Shift + 8</Text>
+          <Text>- Numbered List: Ctrl/Command + Shift + 7</Text>
+          <Text>- Headings: Use toolbar buttons (H1/H2/H3)</Text>
+          <Text>- Align: Use toolbar alignment buttons</Text>
+        </View>
+        <View style={[styles.modalActions, { marginTop: 16 }]}>
+          <Button mode="contained" onPress={() => dispatch({ type: 'TOGGLE_SHORTCUTS_MODAL' })} style={styles.modalButton}>Got it</Button>
+        </View>
+      </Modal>
+    </Portal>
+
     {/* Folder Selector Modal */}
     <FolderSelector
       visible={showFolderSelector}
@@ -1787,6 +1962,18 @@ export default function EditorScreen() {
       onFolderSelected={handleFolderSelected}
       selectedFolderId={selectedFolderId}
       title="Select Folder for Note"
+    />
+
+    {/* Save As Folder Selector */}
+    <FolderSelector
+      visible={showSaveAsFolderSelector}
+      onDismiss={() => dispatch({ type: 'TOGGLE_SAVE_AS_FOLDER_SELECTOR' })}
+      onFolderSelected={(fid, fname) => {
+        dispatch({ type: 'SET_SAVE_AS_FOLDER', payload: { id: fid, name: fname || 'Inbox' } });
+        dispatch({ type: 'TOGGLE_SAVE_AS_FOLDER_SELECTOR' });
+      }}
+      selectedFolderId={saveAsFolderId}
+      title="Choose Destination Folder"
     />
     </>
   );
