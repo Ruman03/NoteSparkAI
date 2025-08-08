@@ -172,9 +172,10 @@ export class GeminiVisionService {
         // Add timeout protection
         const result = await Promise.race([
           operation(),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error(`Operation timeout after ${VISION_TIMEOUT}ms`)), VISION_TIMEOUT)
-          )
+          new Promise<never>((_, reject) => {
+            const t = setTimeout(() => reject(new Error(`Operation timeout after ${VISION_TIMEOUT}ms`)), VISION_TIMEOUT);
+            (t as any).unref?.();
+          })
         ]);
         
         // Update metrics on success
@@ -213,7 +214,7 @@ export class GeminiVisionService {
         
         console.warn(`GeminiVisionService: ${operationName} failed on attempt ${attempt}, retrying in ${Math.round(finalDelay)}ms:`, lastError.message);
         
-        await new Promise(resolve => setTimeout(resolve, finalDelay));
+  await new Promise(resolve => { const t = setTimeout(resolve, finalDelay); (t as any).unref?.(); });
       }
     }
     

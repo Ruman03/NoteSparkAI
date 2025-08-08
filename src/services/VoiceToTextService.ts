@@ -182,6 +182,7 @@ class VoiceToTextService {
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Voice operation timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -213,7 +214,7 @@ class VoiceToTextService {
         // Progressive delay between retries
         const delay = Math.min(1000 * attempt, 3000);
         console.log(`VoiceToTextService: Retrying ${operationName} in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     
@@ -427,19 +428,18 @@ class VoiceToTextService {
       // Start voice recognition with timeout protection
       await Promise.race([
         Voice.start(this.settings.language),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Voice start timeout')), this.settings.timeout || VOICE_TIMEOUT)
-        )
+        new Promise<never>((_, reject) => { const t = setTimeout(() => reject(new Error('Voice start timeout')), this.settings.timeout || VOICE_TIMEOUT); (t as any).unref?.(); })
       ]);
 
       this.isListening = true;
       console.log(`VoiceToTextService: Started listening with session ID: ${this.currentSessionId}`);
 
       // Set maximum session timeout
-      this.sessionTimeout = setTimeout(() => {
+  this.sessionTimeout = setTimeout(() => {
         console.log('VoiceToTextService: Session timeout reached, stopping...');
         this.stopListening();
       }, this.settings.maxDuration);
+  (this.sessionTimeout as any).unref?.();
 
       // Log analytics
       this.logAnalyticsEvent('voice_started', { 
@@ -471,12 +471,10 @@ class VoiceToTextService {
       // Stop voice recognition with timeout protection
       await Promise.race([
         Voice.stop(),
-        new Promise<void>((resolve) => 
-          setTimeout(() => {
+        new Promise<void>((resolve) => { const t = setTimeout(() => {
             console.warn('VoiceToTextService: Stop operation timed out, forcing stop');
             resolve();
-          }, 5000)
-        )
+          }, 5000); (t as any).unref?.(); })
       ]);
 
       this.isListening = false;
@@ -528,12 +526,10 @@ class VoiceToTextService {
       // Cancel voice recognition with timeout protection
       await Promise.race([
         Voice.cancel(),
-        new Promise<void>((resolve) => 
-          setTimeout(() => {
+        new Promise<void>((resolve) => { const t = setTimeout(() => {
             console.warn('VoiceToTextService: Cancel operation timed out, forcing cancellation');
             resolve();
-          }, 3000)
-        )
+          }, 3000); (t as any).unref?.(); })
       ]);
 
       this.isListening = false;

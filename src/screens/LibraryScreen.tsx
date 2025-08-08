@@ -233,12 +233,14 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
       setIsLoading(false);
       setIsRefreshing(false);
       
-      // ENHANCED: Auto-generate insights if library has sufficient content
-      setTimeout(() => {
+  // ENHANCED: Auto-generate insights if library has sufficient content
+  const insightsTimer = setTimeout(() => {
         if (folders.length > 2 || notes.length > 5) {
           generateGeminiInsights();
         }
-      }, 1000);
+  }, 1000);
+  // Prevent open handle leaks under Node/Jest
+  (insightsTimer as any).unref?.();
     }
   }, [activeTab, selectedFolder?.id, refreshFolders, getNotesInFolder, notesService, foldersLoading]); // Stable dependencies
 
@@ -254,9 +256,11 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
       }
       
       // Reset the flag after a short delay to allow future loads
-      const timer = setTimeout(() => {
+  const timer = setTimeout(() => {
         shouldLoadDataRef.current = true;
       }, 1000);
+  // Prevent open handle leaks under Node/Jest
+  (timer as any).unref?.();
       
       return () => {
         clearTimeout(timer);
@@ -329,11 +333,13 @@ const LibraryScreen: React.FC<LibraryScreenProps> = ({ navigation }) => {
     }
     
     // Set new timeout for debounced search
-    const timeout = setTimeout(() => {
+  const timeout = setTimeout(() => {
       // Search will be handled by the filtered data computation
       hapticService.light();
     }, SEARCH_DEBOUNCE_MS);
-    
+  // Prevent open handle leaks under Node/Jest
+  (timeout as any).unref?.();
+
     setSearchTimeout(timeout);
   }, [searchTimeout, updateLibraryAnalytics]);
 

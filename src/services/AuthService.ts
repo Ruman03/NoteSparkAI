@@ -50,6 +50,7 @@ export class AuthService {
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Authentication timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -83,7 +84,7 @@ export class AuthService {
         // Progressive backoff for auth operations
         const delay = Math.min(1000 * attempt, 5000); // Max 5 seconds delay
         console.log(`AuthService: Retrying ${operationName} in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     

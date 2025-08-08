@@ -277,7 +277,10 @@ function HomeScreen() {
           console.error('HomeScreen: Error loading notes:', error);
           return []; // Return empty array on error
         }),
-        new Promise(resolve => setTimeout(resolve, Math.max(500, 1200 - (Date.now() - startTime)))) // Adaptive loading time
+        new Promise(resolve => {
+          const t = setTimeout(resolve, Math.max(500, 1200 - (Date.now() - startTime)));
+          (t as any).unref?.();
+        }) // Adaptive loading time
       ]);
       
       const calculatedStats = calculateStats(notes);

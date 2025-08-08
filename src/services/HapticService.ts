@@ -161,6 +161,7 @@ export class HapticService {
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Haptic operation timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -191,7 +192,7 @@ export class HapticService {
           this.retryOptions.baseDelay * Math.pow(this.retryOptions.backoffFactor, attempt - 1),
           this.retryOptions.maxDelay
         );
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     

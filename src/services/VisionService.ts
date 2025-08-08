@@ -137,7 +137,7 @@ class VisionService {
         );
         
         console.log(`${operationName} attempt ${attempt + 1} failed, retrying in ${delay}ms:`, errorMessage);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     
@@ -265,7 +265,8 @@ class VisionService {
 
         // Make API request with enhanced timeout handling
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), VISION_API_TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), VISION_API_TIMEOUT);
+  (timeoutId as any).unref?.();
 
         const apiCallStart = Date.now();
         const response = await fetch(

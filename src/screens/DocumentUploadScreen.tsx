@@ -97,7 +97,10 @@ export default function DocumentUploadScreen() {
     hapticService.light();
     
     // Simulate data refresh with cleanup
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => {
+      const t = setTimeout(resolve, 1000);
+      (t as any).unref?.();
+    });
     
     // Clear completed sessions after refresh
     setUploadSessions(prev => prev.filter(session => 
@@ -240,7 +243,8 @@ export default function DocumentUploadScreen() {
       
       // Auto-process if single file and user preference allows
       if (files.length === 1) {
-        setTimeout(() => processFiles(files), 500); // Small delay for better UX
+        const t = setTimeout(() => processFiles(files), 500); // Small delay for better UX
+        (t as any).unref?.();
       }
 
     } catch (error: any) {
@@ -330,10 +334,13 @@ export default function DocumentUploadScreen() {
           }
 
           // Navigate to preview after a short delay for better UX
-          setTimeout(() => {
+          {
+            const t = setTimeout(() => {
             const completedSession = { ...session, result, completedAt: new Date().toISOString() };
             navigation.navigate('DocumentPreview', { uploadSession: completedSession });
           }, 1000);
+            (t as any).unref?.();
+          }
 
         } catch (error) {
           errorCount++;
@@ -434,7 +441,10 @@ export default function DocumentUploadScreen() {
       }));
       
       // Simulate refresh animation
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => {
+        const t = setTimeout(resolve, 800);
+        (t as any).unref?.();
+      });
       
     } catch (error) {
       console.error('DocumentUpload: Refresh error:', error);

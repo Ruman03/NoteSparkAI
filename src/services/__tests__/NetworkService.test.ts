@@ -155,7 +155,7 @@ describe('NetworkService', () => {
 
     it('should handle timeout', async () => {
       global.fetch = jest.fn().mockImplementationOnce(
-        () => new Promise(resolve => setTimeout(resolve, 6000)) // 6 seconds, longer than 5s timeout
+  () => new Promise(resolve => { const t = setTimeout(resolve, 6000); (t as any).unref?.(); }) // 6 seconds, longer than 5s timeout
       );
 
       const isConnected = await networkService.testInternetConnectivity();

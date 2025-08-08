@@ -94,10 +94,14 @@ export const useAutoSaveWithVersioning = (
     }
 
     // Set new timer
-    autoSaveTimerRef.current = setTimeout(
-      performAutoSave,
-      autoSaveInterval * 60 * 1000
-    );
+    {
+      const t = setTimeout(
+        performAutoSave,
+        autoSaveInterval * 60 * 1000
+      );
+      (t as any).unref?.();
+      autoSaveTimerRef.current = t;
+    }
 
     return () => {
       if (autoSaveTimerRef.current) {
@@ -118,10 +122,14 @@ export const useAutoSaveWithVersioning = (
     }
 
     // Set new timer
-    versionTimerRef.current = setTimeout(
-      createVersion,
-      versionInterval * 60 * 1000
-    );
+    {
+      const t = setTimeout(
+        createVersion,
+        versionInterval * 60 * 1000
+      );
+      (t as any).unref?.();
+      versionTimerRef.current = t;
+    }
 
     return () => {
       if (versionTimerRef.current) {

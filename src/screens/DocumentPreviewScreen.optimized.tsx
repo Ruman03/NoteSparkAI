@@ -334,13 +334,13 @@ export default function DocumentPreviewScreen() {
         estimatedTimeRemaining: 0,
       }));
 
-      // Delayed UI updates for smooth experience
-      setTimeout(() => {
+  // Delayed UI updates for smooth experience
+  { const t = setTimeout(() => {
         setIsProcessing(false);
         setShowProcessingDialog(false);
         showSnackbar('Document successfully processed and enhanced!');
         hapticService.success();
-      }, 1500);
+  }, 1500); (t as any).unref?.(); }
 
       console.log('DocumentPreviewScreen: Processing completed', {
         processingTime,

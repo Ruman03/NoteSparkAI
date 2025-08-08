@@ -3,53 +3,55 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 
 // Mock Firebase modules
-jest.mock('@react-native-firebase/firestore', () => ({
-  __esModule: true,
-  default: () => ({
-    collection: jest.fn(() => ({
-      add: jest.fn(),
-      doc: jest.fn(() => ({
-        set: jest.fn(),
-        get: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-        onSnapshot: jest.fn(),
-      })),
-      where: jest.fn(() => ({
-        orderBy: jest.fn(() => ({
-          limit: jest.fn(() => ({
-            get: jest.fn(),
-            onSnapshot: jest.fn(),
-          })),
-          get: jest.fn(),
-          onSnapshot: jest.fn(),
-        })),
-        get: jest.fn(),
-        onSnapshot: jest.fn(),
-      })),
-      orderBy: jest.fn(() => ({
-        limit: jest.fn(() => ({
-          get: jest.fn(),
-          onSnapshot: jest.fn(),
-        })),
-        get: jest.fn(),
-        onSnapshot: jest.fn(),
-      })),
+jest.mock('@react-native-firebase/firestore', () => {
+  const mockAdd = jest.fn();
+  const docObj = {
+    set: jest.fn(),
+    get: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    onSnapshot: jest.fn(),
+  };
+  const mockDoc = jest.fn(() => docObj);
+  const orderByObj = {
+    limit: jest.fn(() => ({
       get: jest.fn(),
       onSnapshot: jest.fn(),
     })),
-  }),
-}));
+    get: jest.fn(),
+    onSnapshot: jest.fn(),
+  };
+  const mockOrderBy = jest.fn(() => orderByObj);
+  const whereObj = {
+    orderBy: mockOrderBy,
+    get: jest.fn(),
+    onSnapshot: jest.fn(),
+  };
+  const mockWhere = jest.fn(() => whereObj);
+  const mockCollection = {
+    add: mockAdd,
+    doc: mockDoc,
+    where: mockWhere,
+    orderBy: mockOrderBy,
+    get: jest.fn(),
+    onSnapshot: jest.fn(),
+  };
+  const mockFirestoreInstance = {
+    collection: jest.fn(() => mockCollection),
+  };
+  const defaultExport = jest.fn(() => mockFirestoreInstance);
+  return { __esModule: true, default: defaultExport };
+});
 
-jest.mock('@react-native-firebase/auth', () => ({
-  __esModule: true,
-  default: () => ({
+jest.mock('@react-native-firebase/auth', () => {
+  const defaultExport = jest.fn(() => ({
     currentUser: {
       uid: 'test-user-id',
       email: 'test@example.com',
     },
-  }),
-}));
+  }));
+  return { __esModule: true, default: defaultExport };
+});
 
 describe('NotesService', () => {
   let notesService: NotesService;
@@ -67,7 +69,7 @@ describe('NotesService', () => {
   });
 
   afterEach(() => {
-    jest.resetAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('getInstance', () => {

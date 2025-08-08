@@ -311,13 +311,17 @@ class ServiceContainer {
         }
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error(`Service instantiation timeout for '${key}'`)), SERVICE_INSTANTIATION_TIMEOUT)
-      );
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error(`Service instantiation timeout for '${key}'`)), SERVICE_INSTANTIATION_TIMEOUT);
+        (t as any).unref?.();
+      });
 
       // For synchronous factories, this will resolve immediately
       // For asynchronous factories, this provides timeout protection
-      return Promise.race([factoryPromise, timeoutPromise]) as any;
+      return Promise.race([factoryPromise, timeoutPromise])
+        .finally(() => {
+          // No direct timer handle to clear here (resolved within timeoutPromise scope)
+        }) as any;
 
     } catch (error) {
       this.updateMetrics('instantiation_error', { error: error instanceof Error ? error.message : String(error) });

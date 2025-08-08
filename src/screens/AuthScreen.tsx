@@ -204,9 +204,20 @@ const AuthScreen: React.FC = () => {
   
   // Debouncing ref for password strength analysis
   const passwordAnalysisTimeout = useRef<NodeJS.Timeout | null>(null);
+  const uiResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const theme = useTheme();
   const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
+
+  // Cleanup any pending UI reset timer on unmount
+  useEffect(() => {
+    return () => {
+      if (uiResetTimeoutRef.current) {
+        clearTimeout(uiResetTimeoutRef.current);
+        uiResetTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // ENHANCED: Session analytics and performance tracking with cleanup
   useEffect(() => {
@@ -220,7 +231,7 @@ const AuthScreen: React.FC = () => {
     }));
 
     // Track session duration
-    const interval = setInterval(() => {
+  const interval = setInterval(() => {
       setAnalytics(prev => ({
         ...prev,
         userEngagement: {
@@ -229,6 +240,8 @@ const AuthScreen: React.FC = () => {
         },
       }));
     }, 1000);
+  // Prevent open handle leaks under Node/Jest
+  (interval as any).unref?.();
 
     // Cleanup function
     return () => {
@@ -283,8 +296,8 @@ const AuthScreen: React.FC = () => {
       clearTimeout(passwordAnalysisTimeout.current);
     }
 
-    // Debounce the analysis to prevent excessive updates
-    passwordAnalysisTimeout.current = setTimeout(() => {
+  // Debounce the analysis to prevent excessive updates
+  passwordAnalysisTimeout.current = setTimeout(() => {
       const hasUppercase = /[A-Z]/.test(passwordValue);
       const hasLowercase = /[a-z]/.test(passwordValue);
       const hasNumbers = /\d/.test(passwordValue);
@@ -362,7 +375,9 @@ const AuthScreen: React.FC = () => {
         
         return newMetrics;
       });
-    }, 150); // 150ms debounce
+  }, 150); // 150ms debounce
+  // Prevent open handle leaks under Node/Jest
+  (passwordAnalysisTimeout.current as any)?.unref?.();
 
     return formValidation.password.strength || 0;
   }, [formValidation.password.strength]);
@@ -496,9 +511,11 @@ const AuthScreen: React.FC = () => {
       Alert.alert('Authentication Error', userMessage);
     } finally {
       setLoading(false);
-      setTimeout(() => {
+      const t = setTimeout(() => {
         setUiState(prev => ({ ...prev, animationState: 'idle' }));
       }, 2000);
+      (t as any).unref?.();
+      uiResetTimeoutRef.current = t;
     }
   };
 
@@ -537,9 +554,11 @@ const AuthScreen: React.FC = () => {
       Alert.alert('Google Sign-In Error', userMessage);
     } finally {
       setLoading(false);
-      setTimeout(() => {
+      const t = setTimeout(() => {
         setUiState(prev => ({ ...prev, animationState: 'idle' }));
       }, 2000);
+      (t as any).unref?.();
+      uiResetTimeoutRef.current = t;
     }
   };
 
@@ -570,9 +589,11 @@ const AuthScreen: React.FC = () => {
       Alert.alert('Apple Sign-In Error', error.message);
     } finally {
       setLoading(false);
-      setTimeout(() => {
+      const t = setTimeout(() => {
         setUiState(prev => ({ ...prev, animationState: 'idle' }));
       }, 2000);
+      (t as any).unref?.();
+      uiResetTimeoutRef.current = t;
     }
   };
 
@@ -729,10 +750,12 @@ const AuthScreen: React.FC = () => {
         clearTimeout(updateTimeout.current);
       }
 
-      // Throttle updates to every 200ms
-      updateTimeout.current = setTimeout(() => {
+  // Throttle updates to every 200ms
+  updateTimeout.current = setTimeout(() => {
         setDisplayStrength(strength);
       }, 200);
+  // Prevent open handle leaks under Node/Jest
+  (updateTimeout.current as any)?.unref?.();
 
       return () => {
         if (updateTimeout.current) {
@@ -1215,6 +1238,10 @@ const AuthScreen: React.FC = () => {
     </SafeAreaView>
   );
 };
+
+// Ensure unmount cleanup for pending UI reset timers
+// Place after component definition using an IIFE is not valid; instead, include within component scope
+
 
 const styles = StyleSheet.create({
   // ENHANCED: Core container styles

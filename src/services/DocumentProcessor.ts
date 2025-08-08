@@ -119,6 +119,7 @@ export class DocumentProcessor {
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Document processing timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -153,7 +154,7 @@ export class DocumentProcessor {
           this.retryOptions.maxDelay
         );
         console.log(`DocumentProcessor: Retrying ${operationName} in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     

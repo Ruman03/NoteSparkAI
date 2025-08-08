@@ -1270,6 +1270,7 @@ export default function EditorScreen() {
                   const debounceTimer = setTimeout(() => {
                     handleGeminiSuggestion(textContent);
                   }, 2000); // 2 second debounce
+                  (debounceTimer as any).unref?.();
                   
                   return () => clearTimeout(debounceTimer);
                 }
@@ -1299,7 +1300,7 @@ export default function EditorScreen() {
                 console.log('Undo button pressed - advanced approach');
                 if (richText.current) {
                   richText.current.focusContentEditor();
-                  await new Promise(resolve => setTimeout(resolve, 50));
+                  await new Promise(resolve => { const t = setTimeout(resolve, 50); (t as any).unref?.(); });
                   richText.current.sendAction(actions.undo, 'result');
                 }
               }}
@@ -1314,7 +1315,7 @@ export default function EditorScreen() {
                 console.log('Redo button pressed - advanced approach');
                 if (richText.current) {
                   richText.current.focusContentEditor();
-                  await new Promise(resolve => setTimeout(resolve, 50));
+                  await new Promise(resolve => { const t = setTimeout(resolve, 50); (t as any).unref?.(); });
                   richText.current.sendAction(actions.redo, 'result');
                 }
               }}

@@ -56,6 +56,7 @@ class NetworkService {
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Network operation timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -89,7 +90,10 @@ class NetworkService {
         const jitter = Math.random() * 1000;
         const delay = baseDelay + jitter;
         console.log(`NetworkService: Retrying ${operationName} in ${Math.round(delay)}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise(resolve => {
+          const t = setTimeout(resolve, delay);
+          (t as any).unref?.();
+        });
       }
     }
     
@@ -324,9 +328,9 @@ class NetworkService {
         try {
           // OPTIMIZED: Add delay between operations to prevent overwhelming the network
           if (this.connectionQuality === 'poor') {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => { const t = setTimeout(resolve, 2000); (t as any).unref?.(); });
           } else if (this.connectionQuality === 'fair') {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => { const t = setTimeout(resolve, 1000); (t as any).unref?.(); });
           }
           
           await this.withRetry(async () => {
@@ -366,7 +370,8 @@ class NetworkService {
       
       // OPTIMIZED: Schedule next batch if there are more operations
       if (this.operationQueue.length > 0 && this.isOnline) {
-        setTimeout(() => this.processQueue(), 5000); // 5 second delay between batches
+        const t = setTimeout(() => this.processQueue(), 5000); // 5 second delay between batches
+        (t as any).unref?.();
       }
     }
   }
@@ -416,7 +421,7 @@ class NetworkService {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise(resolve => { const t = setTimeout(resolve, ms); (t as any).unref?.(); });
   }
 
   private async saveQueueToStorage(): Promise<void> {
@@ -498,10 +503,10 @@ class NetworkService {
     try {
   const controller = new AbortController();
   const timeoutMs = 3000;
-  const timeoutPromise = new Promise<false>(resolve => setTimeout(() => {
+  const timeoutPromise = new Promise<false>(resolve => { const t = setTimeout(() => {
     try { controller.abort(); } catch {}
     resolve(false);
-  }, timeoutMs));
+  }, timeoutMs); (t as any).unref?.(); });
 
       const response = await Promise.race([
         fetch(url, { method: 'HEAD', signal: controller.signal }),

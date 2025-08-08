@@ -306,9 +306,10 @@ class EnhancedAIService {
         
         // API call with timeout protection
         const apiCallPromise = this.model.generateContent(enhancedPrompt);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('AI operation timeout')), AI_OPERATION_TIMEOUT)
-        );
+        const timeoutPromise = new Promise((_, reject) => {
+          const t = setTimeout(() => reject(new Error('AI operation timeout')), AI_OPERATION_TIMEOUT);
+          (t as any).unref?.();
+        });
 
         const result = await Promise.race([apiCallPromise, timeoutPromise]);
         const response = await result.response;
@@ -403,9 +404,10 @@ class EnhancedAIService {
           }
         });
 
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Document processing timeout')), AI_OPERATION_TIMEOUT)
-        );
+        const timeoutPromise = new Promise((_, reject) => {
+          const t = setTimeout(() => reject(new Error('Document processing timeout')), AI_OPERATION_TIMEOUT);
+          (t as any).unref?.();
+        });
 
         const result = await Promise.race([apiCallPromise, timeoutPromise]);
         const response = await result.response;
@@ -539,7 +541,7 @@ Return only the title, no quotes or extra text.
 
 Content: ${content.substring(0, 1000)}`;
 
-      const result = await this.model.generateContent({
+  const result = await this.model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.3,
@@ -568,7 +570,7 @@ Content: ${content.substring(0, 1000)}`;
 
 Content: ${content.substring(0, 1000)}`;
 
-      const result = await this.model.generateContent({
+  const result = await this.model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.3,

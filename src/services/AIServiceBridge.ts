@@ -134,9 +134,10 @@ class AIService {
         // Add timeout protection
         const result = await Promise.race([
           operation(),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error(`Bridge operation timeout after ${BRIDGE_TIMEOUT}ms`)), BRIDGE_TIMEOUT)
-          )
+          new Promise<never>((_, reject) => {
+            const t = setTimeout(() => reject(new Error(`Bridge operation timeout after ${BRIDGE_TIMEOUT}ms`)), BRIDGE_TIMEOUT);
+            (t as any).unref?.();
+          })
         ]);
         
         // Update metrics on success
@@ -175,7 +176,7 @@ class AIService {
         
         console.warn(`AIService Bridge: ${operationName} failed on attempt ${attempt}, retrying in ${Math.round(finalDelay)}ms:`, lastError.message);
         
-        await new Promise(resolve => setTimeout(resolve, finalDelay));
+  await new Promise(resolve => { const t = setTimeout(resolve, finalDelay); (t as any).unref?.(); });
       }
     }
     
@@ -356,9 +357,10 @@ class AIService {
       
       const result = await Promise.race([
         this.enhancedService!.checkAPIHealth(),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Health check timeout')), HEALTH_CHECK_TIMEOUT)
-        )
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('Health check timeout')), HEALTH_CHECK_TIMEOUT);
+          (t as any).unref?.();
+        })
       ]);
       
       const isHealthy = result?.healthy || false;

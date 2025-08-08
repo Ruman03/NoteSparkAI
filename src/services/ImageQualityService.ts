@@ -151,6 +151,7 @@ export class ImageQualityService {
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Quality analysis timeout')), timeoutMs);
+          (timeoutId as any).unref?.();
         });
         
         const result = await Promise.race([operation(), timeoutPromise]);
@@ -185,7 +186,7 @@ export class ImageQualityService {
           this.retryOptions.maxDelay
         );
         console.log(`ImageQualityService: Retrying ${operationName} in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     
@@ -604,7 +605,7 @@ export class ImageQualityService {
       };
 
       // Start monitoring with enhanced error handling
-      const interval = setInterval(async () => {
+  const interval = setInterval(async () => {
         try {
           if (!session.isActive) {
             console.log(`ImageQualityService: Session ${sessionId} inactive, stopping interval`);
@@ -629,7 +630,9 @@ export class ImageQualityService {
           console.error(`ImageQualityService: Error in monitoring session ${sessionId}:`, error);
           // Continue monitoring despite individual errors
         }
-      }, intervalMs);
+  }, intervalMs);
+  // Prevent open handle leaks under Node/Jest
+  (interval as any).unref?.();
 
       session.intervalId = interval;
       this.activeSessions.set(sessionId, session);

@@ -88,6 +88,7 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
           sessionDuration: prev.sessionDuration + 1,
         }));
       }, 1000);
+      (durationTimer.current as any)?.unref?.();
     } else {
       if (durationTimer.current) {
         clearInterval(durationTimer.current);
@@ -161,7 +162,6 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
     }));
 
     onTranscription(result.text, result.isFinal);
-
     // Analytics handled internally by voice service
   };
 

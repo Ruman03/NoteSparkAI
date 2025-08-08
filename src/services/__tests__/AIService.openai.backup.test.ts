@@ -1,5 +1,4 @@
 import { AIService } from '../AIService';
-import Config from 'react-native-config';
 
 // Mock react-native-config
 jest.mock('react-native-config', () => ({
@@ -287,7 +286,7 @@ describe('AIService', () => {
   describe('error handling and timeouts', () => {
     it('should timeout after 30 seconds', async () => {
       (fetch as jest.Mock).mockImplementationOnce(
-        () => new Promise(resolve => setTimeout(resolve, 31000))
+  () => new Promise(resolve => { const t = setTimeout(resolve, 31000); (t as any).unref?.(); })
       );
 
       await expect(

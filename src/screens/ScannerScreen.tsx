@@ -62,6 +62,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { hapticService } from '../services/HapticService';
+import { analyticsService, AnalyticsEvents } from '../services/AnalyticsService';
 import { AppIcon } from '../components/AppIcon';
 import { AIService } from '../services/AIService';
 import type { ScannerScreenNavigationProp } from '../types/navigation';
@@ -575,6 +576,13 @@ const ScannerScreen: React.FC = () => {
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   
+  // Log permission prompt exposure
+  useEffect(() => {
+    if (!hasPermission) {
+      analyticsService.logEvent(AnalyticsEvents.CameraPermissionPrompt);
+    }
+  }, [hasPermission]);
+  
   // ENHANCED: Enterprise-Grade State Management with Advanced Analytics
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [flash, setFlash] = useState<'on' | 'off' | 'auto'>('auto');
@@ -833,7 +841,7 @@ const ScannerScreen: React.FC = () => {
   // Enhanced processing with Gemini 2.5 Flash integration and progress tracking
   const handleProcess = useCallback(async () => {
     if (scannedPages.length === 0) return;
-    
+
     const startTime = Date.now();
     setIsProcessing(true);
     setProcessingProgress(0);
@@ -883,11 +891,19 @@ const ScannerScreen: React.FC = () => {
       setScannedPages([]); // Reset for next session
       setProcessingProgress(0);
       
+      // Analytics
+      analyticsService.logEvent(AnalyticsEvents.ProcessingSuccess, {
+        processingTime,
+        pages: scannedPages.length,
+      });
     } catch (error) {
       console.error('ScannerScreen: Processing error:', error);
       setIsProcessing(false);
       setProcessingProgress(0);
       
+      // Analytics
+      analyticsService.logEvent(AnalyticsEvents.ProcessingFailure);
+
       Alert.alert(
         'Processing Error',
         'Failed to process document with AI. Please try again.',
@@ -1083,7 +1099,7 @@ const ScannerScreen: React.FC = () => {
   useEffect(() => {
     if (!autoCapture || !isCameraReady || isProcessing) return;
     let isActive = true;
-    const interval = setInterval(async () => {
+  const interval = setInterval(async () => {
       if (!isActive) return;
       const detection = await performDocumentDetection();
       const now = Date.now();
@@ -1098,7 +1114,8 @@ const ScannerScreen: React.FC = () => {
         trackScanAnalytics('auto_capture');
         takePhoto();
       }
-    }, 800);
+  }, 800);
+  (interval as any).unref?.();
     return () => {
       isActive = false;
       clearInterval(interval);
@@ -1134,7 +1151,14 @@ const ScannerScreen: React.FC = () => {
         </Text>
         <Pressable
           style={[styles.permissionButton, { backgroundColor: theme.colors.primary }]}
-          onPress={requestPermission}
+          onPress={async () => {
+            try {
+              const granted = await requestPermission();
+              if (granted) {
+                analyticsService.logEvent(AnalyticsEvents.CameraPermissionGranted);
+              }
+            } catch {}
+          }}
         >
           <Text style={[styles.permissionButtonText, { color: theme.colors.onPrimary }]}>
             Grant Camera Access

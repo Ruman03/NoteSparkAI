@@ -241,6 +241,7 @@ export const ScannerTutorial: React.FC<ScannerTutorialProps> = ({
   useEffect(() => {
     if (tutorialSteps[currentStep].requiredAction === 'quality') {
       const interval = setInterval(simulateQualityCheck, 1000);
+      (interval as any).unref?.();
       return () => clearInterval(interval);
     }
   }, [currentStep, qualityScore]);

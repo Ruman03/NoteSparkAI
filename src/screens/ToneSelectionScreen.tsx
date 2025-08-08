@@ -287,13 +287,15 @@ export default function ToneSelectionScreen() {
 
   // Auto-analyze content when component mounts
   useEffect(() => {
-    const timer = setTimeout(() => {
+  const timer = setTimeout(() => {
       if ((documentText && documentText.length > 50) || (extractedText && extractedText.length > 50)) {
         // Simplified analysis for now until AIService is enhanced
         setSnackbarMessage('AI analysis suggests using Professional tone for this content');
         setShowSnackbar(true);
       }
     }, 1000);
+  // Prevent open handle leaks under Node/Jest
+  (timer as any)?.unref?.();
 
     return () => clearTimeout(timer);
   }, [documentText, extractedText]);

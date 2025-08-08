@@ -118,7 +118,7 @@ export class VersionHistoryService {
         );
         
         console.log(`${operationName} attempt ${attempt + 1} failed, retrying in ${delay}ms:`, errorMessage);
-        await new Promise(resolve => setTimeout(resolve, delay));
+  await new Promise(resolve => { const t = setTimeout(resolve, delay); (t as any).unref?.(); });
       }
     }
     
@@ -250,7 +250,7 @@ export class VersionHistoryService {
         // Set with timeout protection
         const savePromise = versionRef.set(version);
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Version save timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Version save timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         await Promise.race([savePromise, timeoutPromise]);
@@ -299,7 +299,7 @@ export class VersionHistoryService {
           .get();
 
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Version history fetch timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Version history fetch timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         const snapshot = await Promise.race([queryPromise, timeoutPromise]);
@@ -359,7 +359,7 @@ export class VersionHistoryService {
           .get();
 
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Version restore timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Version restore timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         const versionDoc = await Promise.race([versionDocPromise, timeoutPromise]);
@@ -383,7 +383,7 @@ export class VersionHistoryService {
         });
 
         const updateTimeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Note update timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Note update timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         await Promise.race([updatePromise, updateTimeoutPromise]);
@@ -449,7 +449,7 @@ export class VersionHistoryService {
           .delete();
 
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Version delete timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Version delete timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         await Promise.race([deletePromise, timeoutPromise]);
@@ -482,7 +482,7 @@ export class VersionHistoryService {
           .get();
 
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Version number fetch timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Version number fetch timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         const snapshot = await Promise.race([queryPromise, timeoutPromise]);
@@ -524,7 +524,7 @@ export class VersionHistoryService {
           .get();
 
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Cleanup versions fetch timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Cleanup versions fetch timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         const allVersionsSnapshot = await Promise.race([allVersionsPromise, timeoutPromise]);
@@ -559,7 +559,7 @@ export class VersionHistoryService {
           .get();
 
         const oldTimeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Old versions fetch timeout')), VERSION_OPERATION_TIMEOUT)
+          (() => { const t = setTimeout(() => reject(new Error('Old versions fetch timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
         );
 
         const oldSnapshot = await Promise.race([oldVersionsPromise, oldTimeoutPromise]);
@@ -574,7 +574,7 @@ export class VersionHistoryService {
         if (deletionCount > 0) {
           const batchPromise = batch.commit();
           const batchTimeoutPromise = new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('Batch cleanup timeout')), VERSION_OPERATION_TIMEOUT)
+            (() => { const t = setTimeout(() => reject(new Error('Batch cleanup timeout')), VERSION_OPERATION_TIMEOUT); (t as any).unref?.(); })()
           );
 
           await Promise.race([batchPromise, batchTimeoutPromise]);

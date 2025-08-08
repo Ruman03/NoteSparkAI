@@ -313,9 +313,13 @@ export const useAdaptiveAutoSave = (
 
     const debounceDelay = Math.min(2000, adaptiveInterval / 3); // Debounce for 1/3 of interval
 
-    saveTimeoutRef.current = setTimeout(() => {
-      triggerSave(false);
-    }, debounceDelay);
+    {
+      const t = setTimeout(() => {
+        triggerSave(false);
+      }, debounceDelay);
+      (t as any).unref?.();
+      saveTimeoutRef.current = t as any;
+    }
   }, [calculateAdaptiveInterval, triggerSave]); // Stable dependencies only
 
   // Update auto-save frequency

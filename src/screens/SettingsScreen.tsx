@@ -187,7 +187,7 @@ const SettingsScreen: React.FC = () => {
           preferredFeatures: ['voice-to-text', 'document-scan', 'ai-summary'],
           efficiency: Math.round(userMetrics.productivityScore),
         },
-        personalizedRecommendations: [
+  personalizedRecommendations: [
           {
             recommendation: 'Enable enhanced processing for better accuracy',
             reason: 'Your document scanning frequency suggests you would benefit from advanced OCR',
